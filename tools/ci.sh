@@ -6,7 +6,7 @@ JOB="${1:-ci}"
 ACT_VERSION_REQUIRED="${VM_ACT_VERSION:-0.2.88}"
 RUNNER_IMAGE="${VM_ACT_RUNNER_IMAGE:-violentmonkey-act-runner:local}"
 
-"$REPO_ROOT/tools/runtime-detect.sh" >/dev/null
+sh "$REPO_ROOT/tools/runtime-detect.sh" >/dev/null
 # shellcheck disable=SC1091
 . "$REPO_ROOT/.work/runtime/runtime.env"
 
