@@ -14,6 +14,7 @@ RESULT_FILE="$OUTPUT_DIR/run-result.json"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STATUS="failure"
 EXIT_CODE=1
+FINALIZED=0
 
 mkdir -p "$INPUT_DIR" "$WORK_DIR" "$OUTPUT_DIR"
 rm -rf "$WORK_DIR"/* "$WORK_DIR"/.[!.]* "$WORK_DIR"/..?* 2>/dev/null || true
@@ -34,6 +35,12 @@ emit_event() {
 
 finish() {
   EXIT_CODE=$?
+  if [ "$FINALIZED" -eq 1 ]; then
+    return
+  fi
+  FINALIZED=1
+  trap - EXIT HUP INT TERM
+
   if [ "$EXIT_CODE" -eq 0 ]; then
     STATUS="success"
   else
@@ -63,10 +70,14 @@ finish() {
       runtime: {kind: $runtimeKind, endpoint: $runtimeEndpoint}
     }' > "$RESULT_FILE"
   emit_event "toolchain.completed" "$STATUS" "command=$COMMAND exitCode=$EXIT_CODE"
-  printf '%s\n' "$(cat "$RESULT_FILE")"
+  cat "$RESULT_FILE"
   exit "$EXIT_CODE"
 }
-trap finish EXIT HUP INT TERM
+
+trap finish EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [ ! -f "$INPUT_DIR/package.json" ]; then
   emit_event "toolchain.validation" "failure" "package.json is missing from input"
@@ -148,7 +159,7 @@ case "$COMMAND" in
       echo "exec requires a command" >&2
       exit 64
     fi
-    exec "$@"
+    "$@"
     ;;
   *)
     echo "Unknown toolchain command: $COMMAND" >&2
