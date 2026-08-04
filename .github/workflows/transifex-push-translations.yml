@@ -1,27 +1,17 @@
-name: Upload translations to Transifex
+name: Transifex Push Disabled for Fork
 
 on:
   workflow_dispatch:
-  pull_request_target:
-    types:
-      - closed
-      - labeled
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  disabled:
     runs-on: ubuntu-latest
-    # if PR with label `i18n` is merged
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'i18n')
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: 'package.json'
-      - name: Install deps
-        run: pnpm ci
-      - name: Upload translations
-        run: node scripts/transifex.mjs push
-        env:
-          TRANSIFEX_TOKEN: ${{ secrets.TRANSIFEX_TOKEN }}
-          DIFF_URL: ${{ github.event.pull_request.diff_url }}
+      - name: Explain disabled translation push
+        shell: bash
+        run: |
+          echo "The inherited pull-request-triggered Transifex push is disabled."
+          echo "Translation publication requires a future stateless network-enabled tooling container, fork-owned token, local act validation, and explicit operator action."
