@@ -19,23 +19,35 @@ function Invoke-Engine {
         [switch]$IgnoreExitCode,
         [switch]$Quiet
     )
-    $all = @()
-    if ($runtime.commandPrefix) {
-        $all += @($runtime.commandPrefix)
-    }
-    $all += $Arguments
 
-    if ($Quiet) {
-        & $runtime.cli @all *> $null
+    $oldDockerHost = $env:DOCKER_HOST
+    try {
+        if ($runtime.cli -eq 'docker' -and $runtime.kind -eq 'RemoteDocker' -and
+            $runtime.endpoint -and -not $runtime.context) {
+            $env:DOCKER_HOST = "$($runtime.endpoint)"
+        }
+
+        $all = @()
+        if ($runtime.commandPrefix) {
+            $all += @($runtime.commandPrefix)
+        }
+        $all += $Arguments
+
+        if ($Quiet) {
+            & $runtime.cli @all *> $null
+        }
+        else {
+            & $runtime.cli @all
+        }
+        $code = $LASTEXITCODE
+        if (-not $IgnoreExitCode -and $code -ne 0) {
+            throw "Container engine command failed ($code): $($runtime.cli) $($all -join ' ')"
+        }
+        return $code
     }
-    else {
-        & $runtime.cli @all
+    finally {
+        $env:DOCKER_HOST = $oldDockerHost
     }
-    $code = $LASTEXITCODE
-    if (-not $IgnoreExitCode -and $code -ne 0) {
-        throw "Container engine command failed ($code): $($runtime.cli) $($all -join ' ')"
-    }
-    return $code
 }
 
 function Convert-EnginePath {
@@ -49,6 +61,9 @@ function Convert-EnginePath {
     }
     return (($value | ForEach-Object { "$_" }) -join "`n").Trim()
 }
+
+$noCache = if ($env:VM_NO_CACHE) { $env:VM_NO_CACHE } else { '0' }
+$rebuildToolchain = if ($env:VM_REBUILD_TOOLCHAIN) { $env:VM_REBUILD_TOOLCHAIN } else { '0' }
 
 if ($runtime.kind -eq 'WslEngine') {
     $repoInWsl = Convert-EnginePath $RepoRoot
@@ -79,6 +94,8 @@ act workflow_dispatch \
   --workflows .github/workflows/ci.yml \
   --job '$Job' \
   --platform 'ubuntu-latest=$RunnerImage' \
+  --env 'VM_NO_CACHE=$noCache' \
+  --env 'VM_REBUILD_TOOLCHAIN=$rebuildToolchain' \
   --pull=false
 "@
     exit $LASTEXITCODE
@@ -129,6 +146,8 @@ try {
             --workflows .github/workflows/ci.yml `
             --job $Job `
             --platform "ubuntu-latest=$RunnerImage" `
+            --env "VM_NO_CACHE=$noCache" `
+            --env "VM_REBUILD_TOOLCHAIN=$rebuildToolchain" `
             --pull=false
         exit $LASTEXITCODE
     }
