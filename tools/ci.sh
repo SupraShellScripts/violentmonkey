@@ -72,4 +72,6 @@ act workflow_dispatch \
   --workflows .github/workflows/ci.yml \
   --job "$JOB" \
   --platform "ubuntu-latest=$RUNNER_IMAGE" \
+  --env "VM_NO_CACHE=${VM_NO_CACHE:-0}" \
+  --env "VM_REBUILD_TOOLCHAIN=${VM_REBUILD_TOOLCHAIN:-0}" \
   --pull=false
