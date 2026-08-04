@@ -69,9 +69,9 @@ Windows:
 Linux or WSL:
 
 ```sh
-./tools/runtime-detect.sh
-./tools/container.sh ci
-./tools/ci.sh
+sh ./tools/runtime-detect.sh
+sh ./tools/container.sh ci
+sh ./tools/ci.sh
 ```
 
 The commands print readable failures and also produce structured JSON.
@@ -138,6 +138,8 @@ At runtime, the container verifies those inputs against the image. If they diffe
 
 The source tree is copied into an ephemeral `/work` directory. The checkout receives no host `node_modules`, and the toolchain writes generated outputs only to `/output`.
 
+The execution workspace excludes local `.env`, `.env.*`, and `.secrets` content. Ordinary build and test operations receive no secrets. A future build-time configuration interface must explicitly allowlist accepted variables and must not forward the host environment wholesale.
+
 The container is:
 
 - removed after execution;
@@ -160,7 +162,7 @@ It has only a manual `workflow_dispatch` trigger. The normal command is:
 or:
 
 ```sh
-./tools/ci.sh
+sh ./tools/ci.sh
 ```
 
 The launcher:
@@ -291,7 +293,7 @@ $env:VM_REBUILD_TOOLCHAIN = '1'
 or:
 
 ```sh
-VM_NO_CACHE=1 VM_REBUILD_TOOLCHAIN=1 ./tools/ci.sh
+VM_NO_CACHE=1 VM_REBUILD_TOOLCHAIN=1 sh ./tools/ci.sh
 ```
 
 The gate must produce successful `run-result.json`, both `dist/` variants, checksums, and build metadata.
