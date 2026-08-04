@@ -13,9 +13,9 @@ Use the stateless container launchers:
 ```
 
 ```sh
-./tools/runtime-detect.sh
-./tools/container.sh ci
-./tools/ci.sh
+sh ./tools/runtime-detect.sh
+sh ./tools/container.sh ci
+sh ./tools/ci.sh
 ```
 
 `tools/ci.*` runs the checked-in GitHub Actions workflow locally through `nektos/act`. `tools/container.*` runs an individual project task directly in the same disposable toolchain.
