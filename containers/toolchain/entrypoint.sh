@@ -102,8 +102,12 @@ ln -s /opt/violentmonkey/node_modules node_modules
 SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
 emit_event "toolchain.started" "running" "command=$COMMAND sourceCommit=$SOURCE_COMMIT"
 
+check_policy() {
+  sh ./tools/check-container-policy.sh
+}
+
 run_ci() {
-  ./tools/check-container-policy.sh
+  check_policy
   pnpm run ci
   pnpm run build
   pnpm run build:mv3
@@ -114,26 +118,26 @@ case "$COMMAND" in
     run_ci
     ;;
   policy)
-    ./tools/check-container-policy.sh
+    check_policy
     ;;
   lint)
-    ./tools/check-container-policy.sh
+    check_policy
     pnpm run lint
     ;;
   test)
     pnpm run test
     ;;
   build)
-    ./tools/check-container-policy.sh
+    check_policy
     pnpm run build
     pnpm run build:mv3
     ;;
   build-mv2)
-    ./tools/check-container-policy.sh
+    check_policy
     pnpm run build
     ;;
   build-mv3)
-    ./tools/check-container-policy.sh
+    check_policy
     pnpm run build:mv3
     ;;
   pnpm)
