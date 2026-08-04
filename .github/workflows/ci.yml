@@ -21,9 +21,7 @@ jobs:
 
       - name: Run the stateless toolchain
         shell: bash
-        run: |
-          chmod +x tools/*.sh containers/toolchain/entrypoint.sh
-          ./tools/container.sh ci
+        run: sh ./tools/container.sh ci
 
       - name: Summarize machine result
         if: always()
