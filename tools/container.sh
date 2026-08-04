@@ -7,7 +7,7 @@ if [ "$#" -gt 0 ]; then
   shift
 fi
 
-"$REPO_ROOT/tools/runtime-detect.sh" >/dev/null
+sh "$REPO_ROOT/tools/runtime-detect.sh" >/dev/null
 # shellcheck disable=SC1091
 . "$REPO_ROOT/.work/runtime/runtime.env"
 
