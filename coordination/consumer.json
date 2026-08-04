@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "repository": "SupraShellScripts/violentmonkey",
+  "role": "modified-userscript-manager-and-developer-mode",
+  "coordinator": "SupraShellScripts/violentmonkey-workbench-private",
+  "coordinatorParentIssue": "SupraShellScripts/violentmonkey-workbench-private#9",
+  "localPath": "SupraShellScripts/violentmonkey",
+  "defaultBranch": "master",
+  "upstream": {
+    "repository": "violentmonkey/violentmonkey",
+    "remote": "upstream",
+    "defaultBranch": "master"
+  },
+  "ownership": {
+    "owns": [
+      "MIT downstream extension source",
+      "Developer Mode capability service",
+      "native messaging adapter",
+      "extension builds and browser packaging",
+      "extension-specific tests and upstream synchronization"
+    ],
+    "doesNotOwn": [
+      "Workbench daemon or native host implementation",
+      "individual userscript source",
+      "shared reusable tooling lifecycle",
+      "public Workbench promotion ledger"
+    ]
+  },
+  "validation": {
+    "authoritativeWindowsCommand": ".\\tools\\ci.ps1",
+    "authoritativePosixCommand": "sh ./tools/ci.sh",
+    "heavy": true,
+    "expectedEvidence": [
+      "artifacts/container/ci/run-result.json",
+      "artifacts/container/ci/run-events.jsonl",
+      "artifacts/container/ci/build-metadata.json",
+      "artifacts/container/ci/checksums.sha256",
+      "artifacts/container/ci/dist/",
+      "artifacts/container/ci/dist-mv3/"
+    ]
+  },
+  "coordinationRules": [
+    "This repository remains independently buildable without Workbench.",
+    "Protocol compatibility uses versioned schemas and immutable artifacts.",
+    "Workbench integration defects inform this repository but do not create a build-time dependency.",
+    "Issues are disabled; child branches and pull requests reference the coordinator parent issue directly."
+  ]
+}
