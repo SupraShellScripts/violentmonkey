@@ -27,13 +27,16 @@ RUN apt-get update \
       zip \
  && rm -rf /var/lib/apt/lists/* \
  && npm install --global "pnpm@${PNPM_VERSION}" \
- && pnpm --version
+ && test "$(pnpm --version)" = "${PNPM_VERSION}"
 
 WORKDIR /opt/violentmonkey
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-RUN pnpm install --frozen-lockfile \
+# Lifecycle scripts are intentionally disabled here. The root preinstall invokes
+# an unpinned npx helper, while this image needs only lockfile-defined packages.
+# The upstream pnpm policy already disables dependency build scripts used here.
+RUN pnpm install --frozen-lockfile --ignore-scripts \
  && sha256sum package.json pnpm-lock.yaml pnpm-workspace.yaml \
       > /opt/violentmonkey/dependency-inputs.sha256
 
