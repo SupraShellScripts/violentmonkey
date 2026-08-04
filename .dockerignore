@@ -1,0 +1,10 @@
+.git
+.github
+.work
+artifacts
+dist
+dist-mv3
+node_modules
+*.log
+.env
+.env.*
