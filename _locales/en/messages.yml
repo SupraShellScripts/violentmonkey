@@ -446,8 +446,9 @@ labelDeveloperModeHint:
   description: Security and availability warning for Developer Mode.
   message: >-
     Enables the versioned Developer Mode capability surface for trusted
-    development tooling. Native messaging and controlled browser execution are
-    unavailable until separately implemented and configured.
+    development tooling. A separately installed compatible Workbench native
+    host is required. Controlled browser execution remains unavailable until
+    separately implemented and authorized.
 labelDonate:
   description: Label of link to donate page.
   message: Donate
