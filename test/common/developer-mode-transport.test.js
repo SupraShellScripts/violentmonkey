@@ -3,6 +3,7 @@ import {
   createHandshakeRequest,
   DEVELOPER_MODE_HANDSHAKE,
   DEVELOPER_MODE_HOST,
+  negotiateCapabilities,
   validateHandshakeResponse,
 } from '@/common/developer-mode-transport';
 
@@ -32,6 +33,18 @@ test('valid handshake establishes a copied capability session', () => {
     capabilities: [CONTROLLED_RUNTIME_OPERATION],
   });
   expect(result.capabilities).not.toBe(source.capabilities);
+});
+
+test('capability negotiation cannot widen requested authority', () => {
+  expect(negotiateCapabilities(
+    [CONTROLLED_RUNTIME_OPERATION],
+    ['unrequested.operation', CONTROLLED_RUNTIME_OPERATION,
+      CONTROLLED_RUNTIME_OPERATION],
+  )).toEqual([CONTROLLED_RUNTIME_OPERATION]);
+  expect(negotiateCapabilities(
+    [CONTROLLED_RUNTIME_OPERATION],
+    ['unrequested.operation'],
+  )).toEqual([]);
 });
 
 test.each([
