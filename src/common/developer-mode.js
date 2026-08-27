@@ -1,4 +1,5 @@
 import {
+  CONTROLLED_RECONCILE_OPERATION,
   CONTROLLED_RUNTIME_OPERATION,
   DEVELOPER_MODE_PROTOCOL_VERSION,
 } from './developer-mode-transport';
@@ -18,6 +19,8 @@ export function createDeveloperModeStatus({
   negotiatedCapabilities = [],
 }) {
   const isEnabled = enabled === true;
+  const reconcileNegotiated = negotiatedCapabilities.includes(
+    CONTROLLED_RECONCILE_OPERATION);
   const runtimeNegotiated = negotiatedCapabilities.includes(
     CONTROLLED_RUNTIME_OPERATION);
   return {
@@ -31,6 +34,11 @@ export function createDeveloperModeStatus({
       kind: 'native-messaging',
       connected: false,
     },
+    controlledReconcile: {
+      available: isEnabled && reconcileNegotiated,
+      negotiated: isEnabled && reconcileNegotiated,
+      operation: CONTROLLED_RECONCILE_OPERATION,
+    },
     controlledRuntime: {
       available: false,
       negotiated: isEnabled && runtimeNegotiated,
@@ -38,8 +46,10 @@ export function createDeveloperModeStatus({
     },
     limitation: !isEnabled
       ? 'Developer Mode is disabled.'
-      : runtimeNegotiated
-        ? 'The native host negotiated controlled runtime support, but extension execution authority is not implemented in this slice.'
-        : 'Developer Mode is enabled; install and connect a compatible Workbench native host to negotiate capabilities.',
+      : reconcileNegotiated
+        ? 'Controlled reconcile is available for qualified development artifacts; browser execution and postcondition authority remain unavailable.'
+        : runtimeNegotiated
+          ? 'The native host negotiated controlled runtime support, but extension execution authority is not implemented in this slice.'
+          : 'Developer Mode is enabled; install and connect a compatible Workbench native host to negotiate capabilities.',
   };
 }
