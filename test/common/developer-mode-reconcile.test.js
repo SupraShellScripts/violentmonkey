@@ -1,3 +1,4 @@
+import { webcrypto } from 'crypto';
 import {
   CONTROLLED_RECONCILE_OPERATION,
   CONTROLLED_RUNTIME_OPERATION,
@@ -24,7 +25,7 @@ const CODE = `// ==UserScript==
 (() => {})();`;
 
 async function buildMessage(overrides = {}) {
-  const digest = await sha256TextHex(CODE);
+  const digest = await sha256TextHex(CODE, webcrypto);
   const request = {
     schemaVersion: 1,
     operation: CONTROLLED_RUNTIME_OPERATION,
@@ -92,7 +93,8 @@ test('only qualified Workbench development runtime IDs are accepted', () => {
 test('valid controlled reconcile envelope preserves the governed request', async () => {
   const message = await buildMessage();
   expect(validateControlledReconcileEnvelope(message, context())).toBe(message);
-  await expect(verifyControlledReconcileArtifact(message)).resolves.toMatch(/^[0-9a-f]{64}$/);
+  await expect(verifyControlledReconcileArtifact(message, webcrypto))
+  .resolves.toMatch(/^[0-9a-f]{64}$/);
   const deterministic = clone(message);
   deterministic.request.qualification.state = 'DETERMINISTIC';
   expect(validateControlledReconcileEnvelope(deterministic, context())).toBe(deterministic);
@@ -152,7 +154,11 @@ test('artifact bytes are independently SHA-256 verified', async () => {
   const message = await buildMessage();
   message.artifactCode += '\n// drift';
   validateControlledReconcileEnvelope(message, context());
-  await expect(verifyControlledReconcileArtifact(message)).rejects.toThrow(/bytes/i);
+  await expect(verifyControlledReconcileArtifact(message, webcrypto)).rejects.toThrow(/bytes/i);
+});
+
+test('SHA-256 verification fails closed without WebCrypto', async () => {
+  await expect(sha256TextHex(CODE, {})).rejects.toThrow(/WebCrypto/i);
 });
 
 test('oversized artifact fails before mutation', async () => {
