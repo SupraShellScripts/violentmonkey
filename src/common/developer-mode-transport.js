@@ -39,8 +39,9 @@ export function validateHandshakeResponse(message) {
   || !message.host.version) {
     throw new Error('Native host identity is invalid.');
   }
-  if (typeof message.sessionId !== 'string' || !message.sessionId) {
-    throw new Error('Native host did not establish a session.');
+  if (typeof message.sessionId !== 'string'
+  || !/^[0-9a-f]{32}$/.test(message.sessionId)) {
+    throw new Error('Native host session identity is invalid.');
   }
   if (!Array.isArray(message.capabilities)
   || message.capabilities.some(item => typeof item !== 'string')) {
