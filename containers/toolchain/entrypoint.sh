@@ -86,7 +86,7 @@ if [ ! -f "$INPUT_DIR/package.json" ]; then
 fi
 
 emit_event "workspace.copy.started" "running" "copying source into ephemeral workspace"
-rsync -rlpt \
+rsync -rlt \
   --omit-dir-times \
   --exclude='/node_modules' \
   --exclude='/dist' \
