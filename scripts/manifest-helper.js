@@ -2,6 +2,10 @@ const fs = require('fs');
 const yaml = require('js-yaml');
 const { getVersion, isBeta } = require('./version-helper');
 const { MV3, isProd } = require('./common');
+const {
+  applyWorkbenchDevIdentity,
+  getWorkbenchDevBrowser,
+} = require('./workbench-dev-identity');
 
 function getBrowserTargets() {
   const manifest = readManifest();
@@ -50,6 +54,10 @@ function buildManifest(base) {
     const name = 'Violentmonkey BETA';
     data.name = name;
     data[MV3 ? 'action' : 'browser_action'].default_title = name;
+  }
+  const workbenchDevBrowser = getWorkbenchDevBrowser();
+  if (workbenchDevBrowser) {
+    applyWorkbenchDevIdentity(data, workbenchDevBrowser);
   }
   return data;
 }
