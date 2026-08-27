@@ -67,6 +67,15 @@ function assertOptionalString(value, label, pattern) {
   assertString(value, label, pattern);
 }
 
+function assertSafeUserscriptPath(value) {
+  assertString(value, 'Artifact path');
+  const normalized = value.replace(/\\/g, '/');
+  if (normalized.startsWith('/') || /^[a-z]:\//i.test(normalized)
+  || normalized.split('/').includes('..') || !normalized.endsWith('.user.js')) {
+    throw new Error('Artifact path must be a relative userscript path without traversal.');
+  }
+}
+
 function equalStringSets(left, right) {
   if (left.length !== right.length) return false;
   const rightSet = new Set(right);
@@ -84,7 +93,7 @@ function validateControlledRuntimeRequest(request) {
     request.artifact, ARTIFACT_KEYS, ARTIFACT_KEYS, 'Controlled runtime artifact');
   assertString(artifact.identity, 'Artifact identity');
   assertString(artifact.version, 'Artifact version');
-  assertString(artifact.path, 'Artifact path');
+  assertSafeUserscriptPath(artifact.path);
   assertString(artifact.sha256, 'Artifact SHA-256', HEX_64_RE);
   assertStringArray(artifact.declaredMatches, 'Artifact declared matches');
 
@@ -161,7 +170,7 @@ export function validateControlledReconcileEnvelope(message, context) {
   if (developerModeEnabled !== true || transportConnected !== true) {
     throw new Error('Developer Mode transport is not active.');
   }
-  assertString(sessionId, 'Active Developer Mode session ID');
+  assertString(sessionId, 'Active Developer Mode session ID', /^[0-9a-f]{32}$/);
   if (message.sessionId !== sessionId) {
     throw new Error('Controlled reconcile session does not match the active native session.');
   }
@@ -204,7 +213,8 @@ export function validateControlledUserscriptMetadata(meta, request) {
     throw new Error('Userscript metadata version does not match the authorized artifact version.');
   }
   if (Array.isArray(meta.require) && meta.require.length
-  || meta.resources && Object.keys(meta.resources).length) {
+  || meta.resources && Object.keys(meta.resources).length
+  || meta.icon && !String(meta.icon).startsWith('data:')) {
     throw new Error('Controlled reconcile does not allow external dependency acquisition.');
   }
   const matches = [...(meta.match || []), ...(meta.include || [])];
@@ -224,7 +234,10 @@ export function createControlledReconcileResult({
   if (!['reconciled', 'blocked', 'error'].includes(status)) {
     throw new Error('Controlled reconcile result status is invalid.');
   }
-  const result = {
+  if (status === 'reconciled' && (!Number.isInteger(scriptId) || scriptId <= 0)) {
+    throw new Error('Successful controlled reconcile requires a positive script ID.');
+  }
+  return {
     schemaVersion: DEVELOPER_MODE_PROTOCOL_VERSION,
     operation: CONTROLLED_RECONCILE_RESULT,
     correlationId: message.request.correlationId,
@@ -240,5 +253,4 @@ export function createControlledReconcileResult({
     postconditionObserved: false,
     error,
   };
-  return result;
 }
