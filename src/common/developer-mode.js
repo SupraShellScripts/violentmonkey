@@ -6,6 +6,10 @@ import {
 export { DEVELOPER_MODE_PROTOCOL_VERSION };
 export const DEVELOPER_MODE_STATUS_OPERATION = 'developer-mode.status';
 
+export function shouldDisconnectDeveloperMode(value) {
+  return value !== true;
+}
+
 export function createDeveloperModeStatus({
   enabled,
   extensionVersion,
