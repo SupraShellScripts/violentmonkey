@@ -37,6 +37,12 @@ jobs:
           VM_REBUILD_TOOLCHAIN: "1"
         run: sh ./tools/container.sh ci
 
+      - name: Qualify Workbench development artifacts
+        shell: bash
+        env:
+          VM_OUTPUT_DIR: artifacts/container/workbench-identity
+        run: sh ./tools/container.sh exec sh ./tools/validate-workbench-dev-builds.sh
+
       - name: Summarize machine result
         if: always()
         shell: bash
@@ -48,11 +54,30 @@ jobs:
             exit 1
           fi
 
+      - name: Summarize Workbench identity result
+        if: always()
+        shell: bash
+        run: |
+          if test -f artifacts/container/workbench-identity/run-result.json; then
+            cat artifacts/container/workbench-identity/run-result.json
+          else
+            echo '{"schemaVersion":1,"status":"failure","message":"workbench identity run-result.json missing"}'
+            exit 1
+          fi
+          if test -f artifacts/container/workbench-identity/dist/workbench-identity.json; then
+            cat artifacts/container/workbench-identity/dist/workbench-identity.json
+          else
+            echo '{"schemaVersion":1,"status":"failure","message":"workbench identity evidence missing"}'
+            exit 1
+          fi
+
       - name: Upload build and validation evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: violentmonkey-ci-${{ github.sha }}
-          path: artifacts/container/ci/
+          path: |
+            artifacts/container/ci/
+            artifacts/container/workbench-identity/
           if-no-files-found: warn
           retention-days: 7
