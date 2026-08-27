@@ -86,20 +86,17 @@ if [ ! -f "$INPUT_DIR/package.json" ]; then
 fi
 
 emit_event "workspace.copy.started" "running" "copying source into ephemeral workspace"
-(
-  cd "$INPUT_DIR"
-  tar \
-    --exclude='./node_modules' \
-    --exclude='./dist' \
-    --exclude='./dist-mv3' \
-    --exclude='./artifacts' \
-    --exclude='./.work' \
-    --exclude='./.env' \
-    --exclude='./.env.*' \
-    --exclude='./.secrets' \
-    --exclude='./.secrets/**' \
-    -cf - .
-) | (cd "$WORK_DIR" && tar --no-overwrite-dir -xf -)
+rsync -rlpt \
+  --omit-dir-times \
+  --exclude='/node_modules' \
+  --exclude='/dist' \
+  --exclude='/dist-mv3' \
+  --exclude='/artifacts' \
+  --exclude='/.work' \
+  --exclude='/.env' \
+  --exclude='/.env.*' \
+  --exclude='/.secrets' \
+  "$INPUT_DIR/" "$WORK_DIR/"
 emit_event "workspace.copy.completed" "success" "source copied without local secret files"
 
 cd "$WORK_DIR"
