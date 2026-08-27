@@ -108,6 +108,9 @@ if ! sha256sum -c /opt/violentmonkey/dependency-inputs.sha256 >/dev/null 2>&1; t
   exit 3
 fi
 
+# Validate the copied source before adding image-owned dependencies.
+sh ./tools/check-container-policy.sh
+
 rm -rf node_modules
 mkdir -p node_modules
 rsync -rlt --omit-dir-times /opt/violentmonkey/node_modules/ node_modules/
@@ -116,7 +119,7 @@ SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
 emit_event "toolchain.started" "running" "command=$COMMAND sourceCommit=$SOURCE_COMMIT"
 
 check_policy() {
-  sh ./tools/check-container-policy.sh
+  :
 }
 
 run_ci() {
