@@ -9,6 +9,9 @@
           }} <ruby v-text="i18n('labelScriptOptionRequired')"/></span>
         </setting-check>
       </tooltip>
+      <tooltip :content="i18n('labelDeveloperModeHint')">
+        <setting-check :name="kDeveloperMode" :label="i18n('labelDeveloperMode')" />
+      </tooltip>
       <tooltip :content="i18n('labelGmDownloadViaApiHint')">
         <setting-check
           :name="kGmDownloadViaApi" :label="i18n('labelGmDownloadViaApi')" ref="$dlApi"
@@ -126,7 +129,8 @@ import browser from '@/common/browser';
 import { kDownloads, KNOWN_INJECT_INTO, VM_DOCS_INJECT_INTO } from '@/common/consts';
 import options from '@/common/options';
 import {
-  kGmCookieHttpOnly, kGmDownloadViaApi, kScriptTemplate, kUpdateEnabledScriptsOnly,
+  kDeveloperMode, kGmCookieHttpOnly, kGmDownloadViaApi, kScriptTemplate,
+  kUpdateEnabledScriptsOnly,
 } from '@/common/options-defaults';
 import { keyboardService } from '@/common/keyboard';
 import { EXTERNAL_LINK_PROPS, focusMe, getActiveElement } from '@/common/ui';
@@ -143,6 +147,7 @@ const items = {
     light: i18n('optionUiThemeLight'),
   },
   xhrInject: value => value,
+  [kDeveloperMode]: value => value,
   [kGmDownloadViaApi]: value => value,
 };
 const ctrlS = () => getActiveElement().dispatchEvent(new Event('ctrl-s'));
