@@ -24,6 +24,8 @@ addOwnCommands({
   GetDeveloperModeStatus: getStatus,
 });
 
+// Removing the explicit opt-in revokes the native session immediately;
+// masking the connection in status is not sufficient isolation.
 hookOptions(changes => {
   if (Object.prototype.hasOwnProperty.call(changes, kDeveloperMode)
   && shouldDisconnectDeveloperMode(changes[kDeveloperMode])) {
