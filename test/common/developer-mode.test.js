@@ -2,6 +2,7 @@ import {
   createDeveloperModeStatus,
   DEVELOPER_MODE_PROTOCOL_VERSION,
   DEVELOPER_MODE_STATUS_OPERATION,
+  shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import { CONTROLLED_RUNTIME_OPERATION } from '@/common/developer-mode-transport';
 
@@ -27,6 +28,13 @@ test('Developer Mode is fail-closed unless explicitly enabled', () => {
       available: false,
       negotiated: false,
     });
+  }
+});
+
+test('Developer Mode disable transitions revoke an active session', () => {
+  expect(shouldDisconnectDeveloperMode(true)).toBe(false);
+  for (const value of [undefined, null, false, 0, 'true']) {
+    expect(shouldDisconnectDeveloperMode(value)).toBe(true);
   }
 });
 
