@@ -73,9 +73,10 @@ engine create \
   --security-opt no-new-privileges \
   --env "VM_RUNTIME_KIND=$VM_SELECTED_KIND" \
   --env "VM_RUNTIME_ENDPOINT=$VM_SELECTED_ENDPOINT" \
+  --env "VM_INPUT_DIR=/input/source" \
   "$IMAGE" "$COMMAND" "$@" >/dev/null
 
-engine cp "$REPO_ROOT/." "$CONTAINER:/input"
+engine cp "$REPO_ROOT/." "$CONTAINER:/input/source"
 
 set +e
 engine start --attach "$CONTAINER"
