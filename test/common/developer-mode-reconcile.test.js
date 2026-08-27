@@ -80,6 +80,9 @@ function clone(value) {
 }
 
 test('only qualified Workbench development runtime IDs are accepted', () => {
+  expect(WORKBENCH_FIREFOX_DEV_ID).toBe(
+    'violentmonkey-workbench-dev@suprashellscripts.github');
+  expect(WORKBENCH_CHROMIUM_DEV_ID).toBe('mlooodbpjdohbedafmodnmelbmdgmngk');
   expect(isWorkbenchDevelopmentRuntimeId(WORKBENCH_FIREFOX_DEV_ID)).toBe(true);
   expect(isWorkbenchDevelopmentRuntimeId(WORKBENCH_CHROMIUM_DEV_ID)).toBe(true);
   expect(isWorkbenchDevelopmentRuntimeId('{aecec67f-0d10-4fa7-b7c7-609a2db280cf}')).toBe(false);
@@ -90,6 +93,9 @@ test('valid controlled reconcile envelope preserves the governed request', async
   const message = await buildMessage();
   expect(validateControlledReconcileEnvelope(message, context())).toBe(message);
   await expect(verifyControlledReconcileArtifact(message)).resolves.toMatch(/^[0-9a-f]{64}$/);
+  const deterministic = clone(message);
+  deterministic.request.qualification.state = 'DETERMINISTIC';
+  expect(validateControlledReconcileEnvelope(deterministic, context())).toBe(deterministic);
 });
 
 test.each([
@@ -120,6 +126,9 @@ test.each([
   ['non-development profile', request => { request.profile.scope = 'production'; }],
   ['wrong adapter', request => { request.adapter = 'mock'; }],
   ['unknown nested field', request => { request.artifact.extra = true; }],
+  ['absolute artifact path', request => { request.artifact.path = 'C:\\tmp\\bad.user.js'; }],
+  ['traversing artifact path', request => { request.artifact.path = '../bad.user.js'; }],
+  ['non-userscript artifact path', request => { request.artifact.path = 'fixtures/bad.js'; }],
 ])('embedded authority request rejects %s', async (label, mutate) => {
   const message = await buildMessage();
   const changed = clone(message);
@@ -181,6 +190,10 @@ test('controlled reconcile rejects dependency acquisition', async () => {
     { ...base, require: ['https://cdn.invalid/dep.js'] }, message.request)).toThrow(/dependency/i);
   expect(() => validateControlledUserscriptMetadata(
     { ...base, resources: { icon: 'https://cdn.invalid/icon.png' } }, message.request)).toThrow(/dependency/i);
+  expect(() => validateControlledUserscriptMetadata(
+    { ...base, icon: 'https://cdn.invalid/icon.png' }, message.request)).toThrow(/dependency/i);
+  expect(validateControlledUserscriptMetadata(
+    { ...base, icon: 'data:image/png;base64,AA==' }, message.request)).toBeTruthy();
 });
 
 test('reconcile result cannot imply browser execution or postcondition observation', async () => {
@@ -205,4 +218,9 @@ test('reconcile result cannot imply browser execution or postcondition observati
     postconditionObserved: false,
     error: null,
   });
+  expect(() => createControlledReconcileResult({
+    message,
+    status: 'reconciled',
+    scriptId: null,
+  })).toThrow(/positive script ID/i);
 });
