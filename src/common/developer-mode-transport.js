@@ -15,6 +15,13 @@ export function createHandshakeRequest(extensionVersion) {
   };
 }
 
+export function negotiateCapabilities(requestedCapabilities, returnedCapabilities) {
+  const requested = new Set(requestedCapabilities);
+  return returnedCapabilities.filter((item, index, all) => (
+    requested.has(item) && all.indexOf(item) === index
+  ));
+}
+
 export function validateHandshakeResponse(message) {
   if (!message || typeof message !== 'object') {
     throw new Error('Native host returned a non-object handshake.');
