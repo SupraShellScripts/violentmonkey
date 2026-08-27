@@ -191,14 +191,18 @@ export function validateControlledReconcileEnvelope(message, context) {
   return message;
 }
 
-export async function sha256TextHex(text) {
+export async function sha256TextHex(text, cryptoImpl = globalThis.crypto) {
+  const subtle = cryptoImpl?.subtle;
+  if (typeof subtle?.digest !== 'function') {
+    throw new Error('Controlled reconcile requires WebCrypto SHA-256 support.');
+  }
   const bytes = new TextEncoder().encode(text);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  const digest = await subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function verifyControlledReconcileArtifact(message) {
-  const digest = await sha256TextHex(message.artifactCode);
+export async function verifyControlledReconcileArtifact(message, cryptoImpl = globalThis.crypto) {
+  const digest = await sha256TextHex(message.artifactCode, cryptoImpl);
   if (digest !== message.request.artifact.sha256
   || digest !== message.request.sourceAuthority.artifactSha256) {
     throw new Error('Controlled reconcile artifact bytes do not match the authorized SHA-256.');
