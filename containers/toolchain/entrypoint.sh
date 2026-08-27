@@ -109,7 +109,8 @@ if ! sha256sum -c /opt/violentmonkey/dependency-inputs.sha256 >/dev/null 2>&1; t
 fi
 
 rm -rf node_modules
-ln -s /opt/violentmonkey/node_modules node_modules
+mkdir -p node_modules
+rsync -rlt --omit-dir-times /opt/violentmonkey/node_modules/ node_modules/
 
 SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
 emit_event "toolchain.started" "running" "command=$COMMAND sourceCommit=$SOURCE_COMMIT"
