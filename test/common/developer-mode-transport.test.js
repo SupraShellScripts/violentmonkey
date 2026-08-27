@@ -1,4 +1,5 @@
 import {
+  CONTROLLED_RECONCILE_OPERATION,
   CONTROLLED_RUNTIME_OPERATION,
   createHandshakeRequest,
   DEVELOPER_MODE_HANDSHAKE,
@@ -14,7 +15,10 @@ test('handshake request targets one fixed native host contract', () => {
     schemaVersion: 1,
     operation: DEVELOPER_MODE_HANDSHAKE,
     client: { name: 'violentmonkey', version: '2.46.0' },
-    requestedCapabilities: [CONTROLLED_RUNTIME_OPERATION],
+    requestedCapabilities: [
+      CONTROLLED_RECONCILE_OPERATION,
+      CONTROLLED_RUNTIME_OPERATION,
+    ],
   });
 });
 
@@ -24,26 +28,30 @@ test('valid handshake establishes a copied capability session', () => {
     operation: DEVELOPER_MODE_HANDSHAKE,
     host: { name: 'violentmonkey-workbench', version: '0.1.0' },
     sessionId: 'ephemeral-session',
-    capabilities: [CONTROLLED_RUNTIME_OPERATION],
+    capabilities: [CONTROLLED_RECONCILE_OPERATION],
   };
   const result = validateHandshakeResponse(source);
   expect(result).toEqual({
     host: source.host,
     sessionId: 'ephemeral-session',
-    capabilities: [CONTROLLED_RUNTIME_OPERATION],
+    capabilities: [CONTROLLED_RECONCILE_OPERATION],
   });
   expect(result.capabilities).not.toBe(source.capabilities);
 });
 
 test('capability negotiation cannot widen requested authority', () => {
   expect(negotiateCapabilities(
-    [CONTROLLED_RUNTIME_OPERATION],
-    ['unrequested.operation', CONTROLLED_RUNTIME_OPERATION,
-      CONTROLLED_RUNTIME_OPERATION],
-  )).toEqual([CONTROLLED_RUNTIME_OPERATION]);
+    [CONTROLLED_RECONCILE_OPERATION, CONTROLLED_RUNTIME_OPERATION],
+    ['unrequested.operation', CONTROLLED_RECONCILE_OPERATION,
+      CONTROLLED_RECONCILE_OPERATION],
+  )).toEqual([CONTROLLED_RECONCILE_OPERATION]);
   expect(negotiateCapabilities(
-    [CONTROLLED_RUNTIME_OPERATION],
+    [CONTROLLED_RECONCILE_OPERATION, CONTROLLED_RUNTIME_OPERATION],
     ['unrequested.operation'],
+  )).toEqual([]);
+  expect(negotiateCapabilities(
+    [CONTROLLED_RECONCILE_OPERATION],
+    [CONTROLLED_RUNTIME_OPERATION],
   )).toEqual([]);
 });
 
