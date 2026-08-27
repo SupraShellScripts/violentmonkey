@@ -439,6 +439,15 @@ labelDataImport:
   description: Section title of data import.
   message: Data Import
   touched: false
+labelDeveloperMode:
+  description: Explicit opt-in for Workbench integration capabilities under development.
+  message: Enable Developer Mode
+labelDeveloperModeHint:
+  description: Security and availability warning for Developer Mode.
+  message: >-
+    Enables the versioned Developer Mode capability surface for trusted
+    development tooling. Native messaging and controlled browser execution are
+    unavailable until separately implemented and configured.
 labelDonate:
   description: Label of link to donate page.
   message: Donate
