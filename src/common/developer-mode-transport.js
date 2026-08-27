@@ -1,6 +1,7 @@
 export const DEVELOPER_MODE_HOST = 'io.github.suprashellscripts.violentmonkey_workbench';
 export const DEVELOPER_MODE_HANDSHAKE = 'developer-mode.handshake';
 export const DEVELOPER_MODE_PROTOCOL_VERSION = 1;
+export const CONTROLLED_RECONCILE_OPERATION = 'runtime.reconcile-controlled';
 export const CONTROLLED_RUNTIME_OPERATION = 'runtime.execute-controlled';
 
 export function createHandshakeRequest(extensionVersion) {
@@ -11,7 +12,10 @@ export function createHandshakeRequest(extensionVersion) {
       name: 'violentmonkey',
       version: extensionVersion,
     },
-    requestedCapabilities: [CONTROLLED_RUNTIME_OPERATION],
+    requestedCapabilities: [
+      CONTROLLED_RECONCILE_OPERATION,
+      CONTROLLED_RUNTIME_OPERATION,
+    ],
   };
 }
 
