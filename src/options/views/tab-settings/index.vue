@@ -1,6 +1,7 @@
 <template>
   <div ref="$el" class="tab-settings" :data-show-advanced="settings.showAdvanced">
     <h1 v-text="i18n('labelSettings')"></h1>
+    <vm-developer-mode />
     <section>
       <tooltip :content="i18n('labelHttpOnlyCookieHint')">
         <setting-check :name="kGmCookieHttpOnly">
@@ -8,9 +9,6 @@
             i18n('labelHttpOnlyCookie')
           }} <ruby v-text="i18n('labelScriptOptionRequired')"/></span>
         </setting-check>
-      </tooltip>
-      <tooltip :content="i18n('labelDeveloperModeHint')">
-        <setting-check :name="kDeveloperMode" :label="i18n('labelDeveloperMode')" />
       </tooltip>
       <tooltip :content="i18n('labelGmDownloadViaApiHint')">
         <setting-check
@@ -129,8 +127,7 @@ import browser from '@/common/browser';
 import { kDownloads, KNOWN_INJECT_INTO, VM_DOCS_INJECT_INTO } from '@/common/consts';
 import options from '@/common/options';
 import {
-  kDeveloperMode, kGmCookieHttpOnly, kGmDownloadViaApi, kScriptTemplate,
-  kUpdateEnabledScriptsOnly,
+  kGmCookieHttpOnly, kGmDownloadViaApi, kScriptTemplate, kUpdateEnabledScriptsOnly,
 } from '@/common/options-defaults';
 import { keyboardService } from '@/common/keyboard';
 import { EXTERNAL_LINK_PROPS, focusMe, getActiveElement } from '@/common/ui';
@@ -147,7 +144,6 @@ const items = {
     light: i18n('optionUiThemeLight'),
   },
   xhrInject: value => value,
-  [kDeveloperMode]: value => value,
   [kGmDownloadViaApi]: value => value,
 };
 const ctrlS = () => getActiveElement().dispatchEvent(new Event('ctrl-s'));
@@ -165,6 +161,7 @@ import SettingsPopup from '@/common/ui/settings-popup.vue';
 import VmImport from './vm-import';
 import VmExport from './vm-export';
 import VmMaintenance from './vm-maintenance';
+import VmDeveloperMode from './vm-developer-mode';
 import VmSync from './vm-sync';
 import VmEditor from './vm-editor';
 import VmBlacklist from './vm-blacklist';
