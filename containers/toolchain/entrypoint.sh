@@ -99,7 +99,7 @@ emit_event "workspace.copy.started" "running" "copying source into ephemeral wor
     --exclude='./.secrets' \
     --exclude='./.secrets/**' \
     -cf - .
-) | (cd "$WORK_DIR" && tar -xf -)
+) | (cd "$WORK_DIR" && tar --no-overwrite-dir -xf -)
 emit_event "workspace.copy.completed" "success" "source copied without local secret files"
 
 cd "$WORK_DIR"
