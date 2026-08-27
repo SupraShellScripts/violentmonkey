@@ -1,13 +1,17 @@
 import browser from '@/common/browser';
-import { createDeveloperModeStatus } from '@/common/developer-mode';
+import {
+  createDeveloperModeStatus,
+  shouldDisconnectDeveloperMode,
+} from '@/common/developer-mode';
 import {
   createHandshakeRequest,
   DEVELOPER_MODE_HOST,
+  negotiateCapabilities,
   validateHandshakeResponse,
 } from '@/common/developer-mode-transport';
 import { kDeveloperMode } from '@/common/options-defaults';
 import { addOwnCommands } from './init';
-import { getOption } from './options';
+import { getOption, hookOptions } from './options';
 
 const HANDSHAKE_TIMEOUT = 5000;
 let port;
@@ -18,6 +22,13 @@ addOwnCommands({
   ConnectDeveloperMode: connect,
   DisconnectDeveloperMode: disconnect,
   GetDeveloperModeStatus: getStatus,
+});
+
+hookOptions(changes => {
+  if (Object.prototype.hasOwnProperty.call(changes, kDeveloperMode)
+  && shouldDisconnectDeveloperMode(changes[kDeveloperMode])) {
+    disconnect();
+  }
 });
 
 function disconnectedTransport(error = null) {
@@ -47,11 +58,12 @@ async function connect() {
   if (transport.connected) return getStatus();
   disconnect();
   const manifest = browser.runtime.getManifest();
+  const request = createHandshakeRequest(manifest.version);
   try {
     port = browser.runtime.connectNative(DEVELOPER_MODE_HOST);
-    const handshake = await waitForHandshake(
-      port, createHandshakeRequest(manifest.version));
-    negotiatedCapabilities = handshake.capabilities;
+    const handshake = await waitForHandshake(port, request);
+    negotiatedCapabilities = negotiateCapabilities(
+      request.requestedCapabilities, handshake.capabilities);
     transport = {
       kind: 'native-messaging',
       connected: true,
