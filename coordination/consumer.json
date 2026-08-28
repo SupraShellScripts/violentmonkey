@@ -37,12 +37,16 @@
       "artifacts/container/ci/checksums.sha256",
       "artifacts/container/ci/dist/",
       "artifacts/container/ci/dist-mv3/"
-    ]
+    ],
+    "defaultPortableExecutor": "github-hosted-actions",
+    "portableWorkflow": ".github/workflows/ci.yml",
+    "humanQualificationRequired": false
   },
   "coordinationRules": [
     "This repository remains independently buildable without Workbench.",
     "Protocol compatibility uses versioned schemas and immutable artifacts.",
     "Workbench integration defects inform this repository but do not create a build-time dependency.",
-    "Issues are disabled; child branches and pull requests reference the coordinator parent issue directly."
+    "Issues are disabled; child branches and pull requests reference the coordinator parent issue directly.",
+    "Portable deterministic validation defaults to GitHub-hosted Actions; human shell execution is fallback only."
   ]
 }

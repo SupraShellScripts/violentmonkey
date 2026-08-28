@@ -30,12 +30,18 @@ Because GitHub Issues are disabled here, extension child work uses:
 1. a parent issue in `violentmonkey-workbench-private`;
 2. an issue-named branch in this repository;
 3. an early draft pull request that links the parent issue;
-4. local stateless validation evidence;
+4. repository-owned automated validation evidence, GitHub-hosted by default for portable public CI;
 5. immutable commit, artifact, protocol, and browser references in the parent issue.
 
 ## Validation
 
-The authoritative heavy command remains:
+Portable deterministic validation for this public repository defaults to the repository-owned GitHub-hosted workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+It invokes the same stateless container tooling used elsewhere. When local/self-hosted workflow parity is materially required, automation may use:
 
 ```powershell
 .\tools\ci.ps1
@@ -47,7 +53,7 @@ or:
 sh ./tools/ci.sh
 ```
 
-The coordinator may invoke this command, but it must not duplicate or bypass it. Successful evidence includes both extension variants, checksums, build metadata, and the structured run result.
+These launchers are automation interfaces, not a requirement for human shell execution. The coordinator may invoke repository-owned interfaces, but it must not duplicate or bypass them. Successful evidence includes both extension variants, checksums, build metadata, structured run results, and exact source-commit provenance.
 
 ## Dependency semantics
 
