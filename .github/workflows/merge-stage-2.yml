@@ -1,0 +1,184 @@
+name: Stage synchronized PR2 coordinator contract
+
+on:
+  push:
+    branches:
+      - merge-stage-2
+
+permissions:
+  contents: write
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Merge and recheck coordinator contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOUNDATION=e1bcf3cdb1c71e8db71b34a5421bd25827f0c1d8
+          PR2=f29fc99021bb3dd868c57c0d2987f9d2b02795ea
+          TARGET=agent/coordinator-consumer-contract
+          RESULT=merge-staged-2-result
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin "$FOUNDATION" "$PR2" "$TARGET"
+          test "$(git rev-parse "origin/$TARGET")" = "$PR2"
+
+          git reset --hard "$FOUNDATION"
+          git merge --no-commit --no-ff "$PR2"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+          initial="$(git diff --cached --name-only "$FOUNDATION" | sort)"
+          expected="$(printf '%s\n' DEVELOPMENT.md coordination/consumer.json docs/COORDINATOR_INTEGRATION.md | sort)"
+          test "$initial" = "$expected"
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          doc = Path('docs/COORDINATOR_INTEGRATION.md')
+          s = doc.read_text()
+          old = '''4. local stateless validation evidence;\n5. immutable commit, artifact, protocol, and browser references in the parent issue.'''
+          new = '''4. repository-owned automated validation evidence, GitHub-hosted by default for portable public CI;\n5. immutable commit, artifact, protocol, and browser references in the parent issue.'''
+          if s.count(old) != 1:
+              raise SystemExit('expected one stale work-coordination validation phrase')
+          s = s.replace(old, new)
+          old = '''## Validation\n\nThe authoritative heavy command remains:\n\n```powershell\n.\\tools\\ci.ps1\n```\n\nor:\n\n```sh\nsh ./tools/ci.sh\n```\n\nThe coordinator may invoke this command, but it must not duplicate or bypass it. Successful evidence includes both extension variants, checksums, build metadata, and the structured run result.'''
+          new = '''## Validation\n\nPortable deterministic validation for this public repository defaults to the repository-owned GitHub-hosted workflow:\n\n```text\n.github/workflows/ci.yml\n```\n\nIt invokes the same stateless container tooling used elsewhere. When local/self-hosted workflow parity is materially required, automation may use:\n\n```powershell\n.\\tools\\ci.ps1\n```\n\nor:\n\n```sh\nsh ./tools/ci.sh\n```\n\nThese launchers are automation interfaces, not a requirement for human shell execution. The coordinator may invoke repository-owned interfaces, but it must not duplicate or bypass them. Successful evidence includes both extension variants, checksums, build metadata, structured run results, and exact source-commit provenance.'''
+          if s.count(old) != 1:
+              raise SystemExit('expected one stale validation section')
+          doc.write_text(s.replace(old, new))
+
+          path = Path('coordination/consumer.json')
+          data = json.loads(path.read_text())
+          validation = data['validation']
+          validation['defaultPortableExecutor'] = 'github-hosted-actions'
+          validation['portableWorkflow'] = '.github/workflows/ci.yml'
+          validation['humanQualificationRequired'] = False
+          rules = data['coordinationRules']
+          policy = 'Portable deterministic validation defaults to GitHub-hosted Actions; human shell execution is fallback only.'
+          if policy not in rules:
+              rules.append(policy)
+          path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
+
+          git add DEVELOPMENT.md coordination/consumer.json docs/COORDINATOR_INTEGRATION.md
+          git rm -f .github/workflows/merge-stage-2.yml
+          git diff --cached --check
+
+          final="$(git diff --cached --name-only "$FOUNDATION" | sort)"
+          test "$final" = "$expected"
+
+          jq -e '
+            .schemaVersion == 1 and
+            .repository == "SupraShellScripts/violentmonkey" and
+            .defaultBranch == "master" and
+            .upstream.repository == "violentmonkey/violentmonkey" and
+            .upstream.defaultBranch == "master" and
+            .localPath == "SupraShellScripts/violentmonkey" and
+            .validation.authoritativeWindowsCommand == ".\\tools\\ci.ps1" and
+            .validation.authoritativePosixCommand == "sh ./tools/ci.sh" and
+            .validation.defaultPortableExecutor == "github-hosted-actions" and
+            .validation.portableWorkflow == ".github/workflows/ci.yml" and
+            .validation.humanQualificationRequired == false and
+            (.ownership.owns | index("Developer Mode capability service")) != null and
+            (.ownership.doesNotOwn | index("Workbench daemon or native host implementation")) != null
+          ' coordination/consumer.json >/dev/null
+
+          grep -Fq 'GitHub-hosted by default for portable public CI' docs/COORDINATOR_INTEGRATION.md
+          grep -Fq 'These launchers are automation interfaces, not a requirement for human shell execution.' docs/COORDINATOR_INTEGRATION.md
+          grep -Fq 'remains independently buildable and does not import private Workbench implementation code' DEVELOPMENT.md
+
+          merge_tree="$(git write-tree)"
+          merge_message="$RUNNER_TEMP/pr2-merge.txt"
+          cat > "$merge_message" <<'EOF'
+          merge: carry coordinator contract onto qualified stateless foundation
+
+          Preserve the historical PR #2 ownership and coordination contract while
+          carrying it onto the exact qualified PR #1 foundation. The merge is
+          conflict-free and remains a three-file documentation/metadata delta.
+          EOF
+          merge_sha="$(git commit-tree "$merge_tree" -p "$PR2" -p "$FOUNDATION" < "$merge_message")"
+
+          git reset --hard "$merge_sha"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          doc = Path('docs/COORDINATOR_INTEGRATION.md')
+          s = doc.read_text()
+          s = s.replace('4. local stateless validation evidence;\n', '4. repository-owned automated validation evidence, GitHub-hosted by default for portable public CI;\n')
+          old = '''## Validation\n\nThe authoritative heavy command remains:\n\n```powershell\n.\\tools\\ci.ps1\n```\n\nor:\n\n```sh\nsh ./tools/ci.sh\n```\n\nThe coordinator may invoke this command, but it must not duplicate or bypass it. Successful evidence includes both extension variants, checksums, build metadata, and the structured run result.'''
+          new = '''## Validation\n\nPortable deterministic validation for this public repository defaults to the repository-owned GitHub-hosted workflow:\n\n```text\n.github/workflows/ci.yml\n```\n\nIt invokes the same stateless container tooling used elsewhere. When local/self-hosted workflow parity is materially required, automation may use:\n\n```powershell\n.\\tools\\ci.ps1\n```\n\nor:\n\n```sh\nsh ./tools/ci.sh\n```\n\nThese launchers are automation interfaces, not a requirement for human shell execution. The coordinator may invoke repository-owned interfaces, but it must not duplicate or bypass them. Successful evidence includes both extension variants, checksums, build metadata, structured run results, and exact source-commit provenance.'''
+          if old not in s:
+              raise SystemExit('stale validation section not found after merge commit')
+          doc.write_text(s.replace(old, new))
+
+          path = Path('coordination/consumer.json')
+          data = json.loads(path.read_text())
+          data['validation']['defaultPortableExecutor'] = 'github-hosted-actions'
+          data['validation']['portableWorkflow'] = '.github/workflows/ci.yml'
+          data['validation']['humanQualificationRequired'] = False
+          policy = 'Portable deterministic validation defaults to GitHub-hosted Actions; human shell execution is fallback only.'
+          if policy not in data['coordinationRules']:
+              data['coordinationRules'].append(policy)
+          path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
+          git add coordination/consumer.json docs/COORDINATOR_INTEGRATION.md
+          git diff --cached --check
+          semantic_tree="$(git write-tree)"
+          semantic_message="$RUNNER_TEMP/pr2-semantic.txt"
+          cat > "$semantic_message" <<'EOF'
+          docs: align coordinator contract with automation-first qualification
+
+          Keep the existing repository-owned launcher keys for compatibility while
+          declaring GitHub-hosted Actions as the default portable executor and
+          human shell execution as fallback only.
+          EOF
+          final_sha="$(git commit-tree "$semantic_tree" -p "$merge_sha" < "$semantic_message")"
+
+          test "$(git rev-parse "$merge_sha^1")" = "$PR2"
+          test "$(git rev-parse "$merge_sha^2")" = "$FOUNDATION"
+          git diff --check "$FOUNDATION" "$final_sha"
+          test "$(git diff --name-only "$FOUNDATION" "$final_sha" | sort)" = "$expected"
+
+          git push origin "$final_sha:refs/heads/$RESULT"
+          git fetch --no-tags origin "$RESULT"
+          test "$(git rev-parse "origin/$RESULT")" = "$final_sha"
+
+          mkdir -p coordinator-evidence
+          printf '%s\n' "$PR2" > coordinator-evidence/historical-head.txt
+          printf '%s\n' "$FOUNDATION" > coordinator-evidence/foundation.txt
+          printf '%s\n' "$merge_sha" > coordinator-evidence/merge-commit.txt
+          printf '%s\n' "$final_sha" > coordinator-evidence/final-head.txt
+          printf '%s\n' "$semantic_tree" > coordinator-evidence/final-tree.txt
+          git diff --stat "$FOUNDATION" "$final_sha" > coordinator-evidence/stat.txt
+          git diff --name-only "$FOUNDATION" "$final_sha" > coordinator-evidence/files.txt
+          cp coordination/consumer.json coordinator-evidence/consumer.json
+
+          {
+            echo '### Synchronized PR #2 coordinator contract'
+            echo "- historical head: $PR2"
+            echo "- qualified foundation: $FOUNDATION"
+            echo "- two-parent merge commit: $merge_sha"
+            echo "- final automation-policy head: $final_sha"
+            echo "- final tree: $semantic_tree"
+            echo '- final delta: DEVELOPMENT.md, coordination/consumer.json, docs/COORDINATOR_INTEGRATION.md only'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coordinator recheck evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr2-coordinator-recheck
+          path: coordinator-evidence/
+          if-no-files-found: error
+          retention-days: 7
