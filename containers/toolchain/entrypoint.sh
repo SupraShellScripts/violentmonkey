@@ -86,20 +86,17 @@ if [ ! -f "$INPUT_DIR/package.json" ]; then
 fi
 
 emit_event "workspace.copy.started" "running" "copying source into ephemeral workspace"
-(
-  cd "$INPUT_DIR"
-  tar \
-    --exclude='./node_modules' \
-    --exclude='./dist' \
-    --exclude='./dist-mv3' \
-    --exclude='./artifacts' \
-    --exclude='./.work' \
-    --exclude='./.env' \
-    --exclude='./.env.*' \
-    --exclude='./.secrets' \
-    --exclude='./.secrets/**' \
-    -cf - .
-) | (cd "$WORK_DIR" && tar -xf -)
+rsync -rlt \
+  --omit-dir-times \
+  --exclude='/node_modules' \
+  --exclude='/dist' \
+  --exclude='/dist-mv3' \
+  --exclude='/artifacts' \
+  --exclude='/.work' \
+  --exclude='/.env' \
+  --exclude='/.env.*' \
+  --exclude='/.secrets' \
+  "$INPUT_DIR/" "$WORK_DIR/"
 emit_event "workspace.copy.completed" "success" "source copied without local secret files"
 
 cd "$WORK_DIR"
@@ -111,21 +108,32 @@ if ! sha256sum -c /opt/violentmonkey/dependency-inputs.sha256 >/dev/null 2>&1; t
   exit 3
 fi
 
+if [ -z "${SOURCE_COMMIT:-}" ]; then
+  SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+fi
+if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  emit_event "toolchain.provenance" "failure" "exact source commit is unavailable"
+  echo "An exact 40-character source commit is required for toolchain evidence." >&2
+  exit 4
+fi
+
+# Validate the copied source before adding image-owned dependencies.
+sh ./tools/check-container-policy.sh
+
 rm -rf node_modules
 ln -s /opt/violentmonkey/node_modules node_modules
 
-SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
 emit_event "toolchain.started" "running" "command=$COMMAND sourceCommit=$SOURCE_COMMIT"
 
 check_policy() {
-  sh ./tools/check-container-policy.sh
+  :
 }
 
 run_ci() {
   check_policy
-  pnpm run ci
-  pnpm run build
-  pnpm run build:mv3
+  npm run ci
+  npm run build
+  npm run build:mv3
 }
 
 case "$COMMAND" in
@@ -137,23 +145,23 @@ case "$COMMAND" in
     ;;
   lint)
     check_policy
-    pnpm run lint
+    npm run lint
     ;;
   test)
-    pnpm run test
+    npm run test
     ;;
   build)
     check_policy
-    pnpm run build
-    pnpm run build:mv3
+    npm run build
+    npm run build:mv3
     ;;
   build-mv2)
     check_policy
-    pnpm run build
+    npm run build
     ;;
   build-mv3)
     check_policy
-    pnpm run build:mv3
+    npm run build:mv3
     ;;
   pnpm)
     pnpm "$@"
