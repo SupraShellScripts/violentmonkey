@@ -24,6 +24,8 @@ jobs:
           set -euo pipefail
           FOUNDATION=e1bcf3cdb1c71e8db71b34a5421bd25827f0c1d8
           PR3=d92a3a6992e24ba8159bfc3ba2a6343c2f330b18
+          git config user.name 'merge-compute'
+          git config user.email 'merge-compute@invalid.local'
           git fetch --no-tags origin "$PR3"
           git merge --no-commit --no-ff "$PR3" || true
 
