@@ -1,0 +1,91 @@
+name: Merge compute PR5
+
+on:
+  push:
+    branches:
+      - merge-compute-5
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Inspect PR5 over synchronized PR4 tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=3f9efb76f6808ebd59d4fb4825302da44f61cbea
+          PR4=9f4e0506d9b7c53032e5aaea8545fd687533645b
+          PR5=c653528212e4037292f164c8e5b162d8f2c1a126
+          EXPECTED_PR4_TREE=3ccf7c7cb3de5bce18d2f3aa5a4bea9268ab24a8
+          git config user.name 'merge-compute'
+          git config user.email 'merge-compute@invalid.local'
+          git fetch --no-tags origin "$BASE" "$PR4" "$PR5"
+
+          git reset --hard "$BASE"
+          git merge --no-commit --no-ff "$PR4"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          pr4_tree="$(git write-tree)"
+          test "$pr4_tree" = "$EXPECTED_PR4_TREE"
+          pr4_sync="$(printf 'synthetic synchronized PR4 for merge inspection\n' | git commit-tree "$pr4_tree" -p "$PR4" -p "$BASE")"
+
+          git reset --hard "$pr4_sync"
+          set +e
+          git merge --no-commit --no-ff "$PR5"
+          merge_code=$?
+          set -e
+          conflicts="$(git diff --name-only --diff-filter=U | sort)"
+          {
+            echo '### PR5 merge inspection'
+            echo "- synchronized PR4 tree: $pr4_tree"
+            echo "- merge exit: $merge_code"
+            echo '- conflicts:'
+            if test -n "$conflicts"; then
+              printf '%s\n' "$conflicts" | sed 's/^/  - /'
+            else
+              echo '  - none'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if test -n "$conflicts"; then
+            printf 'CONFLICTS\n%s\n' "$conflicts"
+            exit 2
+          fi
+          test "$merge_code" -eq 0
+          git diff --cached --check
+
+          actual="$(git diff --cached --name-only "$pr4_sync" | sort)"
+          expected="$(cat <<'EOF' | sort
+          src/background/utils/developer-mode.js
+          src/common/developer-mode-reconcile.js
+          src/common/developer-mode-transport.js
+          src/common/developer-mode.js
+          test/common/developer-mode-reconcile.test.js
+          test/common/developer-mode-transport.test.js
+          test/common/developer-mode.test.js
+          EOF
+          )"
+          test "$actual" = "$expected"
+
+          mkdir -p merge-output
+          git write-tree > merge-output/tree.txt
+          git diff --cached --stat "$pr4_sync" > merge-output/stat.txt
+          git diff --cached --name-only "$pr4_sync" > merge-output/files.txt
+          git diff --cached "$pr4_sync" -- src/background/utils/developer-mode.js src/common/developer-mode-transport.js src/common/developer-mode.js > merge-output/overlap.diff
+
+      - name: Upload merge evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr5-merge-compute
+          path: merge-output/
+          if-no-files-found: warn
+          retention-days: 1
