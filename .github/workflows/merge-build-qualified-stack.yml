@@ -1,0 +1,108 @@
+name: Compose final qualified public stack
+
+on:
+  push:
+    branches:
+      - merge-build-qualified-stack
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Compose exact runtime stack and coordinator contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          STACK=93b02d7532071e63425d6674bd2088d779a5a37e
+          COORDINATOR=bbc28115f4301823cfbe344b5c142f28d352ec31
+          TARGET=agent/qualified-public-stack
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin "$STACK" "$COORDINATOR" "$TARGET"
+          test "$(git rev-parse "origin/$TARGET")" = "$STACK"
+
+          git reset --hard "$STACK"
+          git merge --no-commit --no-ff "$COORDINATOR"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+          expected="$(printf '%s\n' DEVELOPMENT.md coordination/consumer.json docs/COORDINATOR_INTEGRATION.md | sort)"
+          actual="$(git diff --cached --name-only "$STACK" | sort)"
+          test "$actual" = "$expected"
+
+          # The combined tree must use the already-synchronized PR #2 bytes for
+          # all three contract files and leave every qualified runtime path alone.
+          git diff --quiet "$COORDINATOR" -- DEVELOPMENT.md coordination/consumer.json docs/COORDINATOR_INTEGRATION.md
+
+          jq -e '
+            .schemaVersion == 1 and
+            .repository == "SupraShellScripts/violentmonkey" and
+            .defaultBranch == "master" and
+            .upstream.repository == "violentmonkey/violentmonkey" and
+            .validation.defaultPortableExecutor == "github-hosted-actions" and
+            .validation.portableWorkflow == ".github/workflows/ci.yml" and
+            .validation.humanQualificationRequired == false and
+            (.ownership.owns | index("Developer Mode capability service")) != null and
+            (.ownership.doesNotOwn | index("Workbench daemon or native host implementation")) != null
+          ' coordination/consumer.json >/dev/null
+          grep -Fq 'These launchers are automation interfaces, not a requirement for human shell execution.' docs/COORDINATOR_INTEGRATION.md
+          grep -Fq 'remains independently buildable and does not import private Workbench implementation code' DEVELOPMENT.md
+
+          tree="$(git write-tree)"
+          message_file="$RUNNER_TEMP/public-stack-merge.txt"
+          cat > "$message_file" <<'EOF'
+          merge: compose qualified public stack and coordinator contract
+
+          Combine the exact qualified #1/#3/#4/#5 runtime stack with the
+          synchronized three-file PR #2 coordinator contract. The merge is
+          conflict-free; relative to qualified #5 only DEVELOPMENT.md,
+          coordination/consumer.json, and docs/COORDINATOR_INTEGRATION.md change.
+          Runtime authority remains unchanged: runtime.execute-controlled is
+          unavailable, and reconcile does not claim browser execution or
+          postcondition observation.
+          EOF
+          combined_sha="$(git commit-tree "$tree" -p "$STACK" -p "$COORDINATOR" < "$message_file")"
+          test "$(git rev-parse "$combined_sha^1")" = "$STACK"
+          test "$(git rev-parse "$combined_sha^2")" = "$COORDINATOR"
+          test "$(git rev-parse "$combined_sha^{tree}")" = "$tree"
+          test "$(git diff --name-only "$STACK" "$combined_sha" | sort)" = "$expected"
+
+          git push origin "$combined_sha:refs/heads/$TARGET"
+          git fetch --no-tags origin "$TARGET"
+          test "$(git rev-parse "origin/$TARGET")" = "$combined_sha"
+
+          mkdir -p compose-evidence
+          printf '%s\n' "$STACK" > compose-evidence/runtime-stack-head.txt
+          printf '%s\n' "$COORDINATOR" > compose-evidence/coordinator-head.txt
+          printf '%s\n' "$combined_sha" > compose-evidence/combined-head.txt
+          printf '%s\n' "$tree" > compose-evidence/combined-tree.txt
+          git diff --stat "$STACK" "$combined_sha" > compose-evidence/stat.txt
+          git diff --name-only "$STACK" "$combined_sha" > compose-evidence/files.txt
+          cp coordination/consumer.json compose-evidence/consumer.json
+
+          {
+            echo '### Final qualified public-stack composition'
+            echo "- qualified runtime stack: $STACK"
+            echo "- synchronized coordinator contract: $COORDINATOR"
+            echo "- combined head: $combined_sha"
+            echo "- combined tree: $tree"
+            echo '- delta from runtime stack: three coordinator documentation/metadata files only'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload composition evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: qualified-public-stack-composition
+          path: compose-evidence/
+          if-no-files-found: error
+          retention-days: 7
