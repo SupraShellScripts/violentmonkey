@@ -372,7 +372,7 @@ function doSearchInternal({ reversed, wrapAround, pos } = {}) {
     if (queryChanged) {
       if (useRegex) {
         try {
-          query = search.prevRe = RegExp(query, (caseSensitive ? '' : 'i') + 'gu');
+          query = search.prevRe = RegExp(query.normalize('NFD'), (caseSensitive ? '' : 'i') + 'gu');
         } catch (err) {
           error = err;
         }
@@ -389,7 +389,7 @@ function doSearchInternal({ reversed, wrapAround, pos } = {}) {
     if (queryChanged || gen !== search.prevGen) {
       search.prevGen = gen;
       search.num = getRealContent().normalize('NFD').match(
-        useRegex ? query : RegExp(escapeStringForRegExp(query), (caseSensitive ? '' : 'i') + 'gu')
+        useRegex ? query : RegExp(escapeStringForRegExp(query.normalize('NFD')), (caseSensitive ? '' : 'i') + 'gu')
       )?.length || 0;
     }
     if (cur.find(reversed)) {

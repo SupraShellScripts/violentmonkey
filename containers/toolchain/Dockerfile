@@ -2,7 +2,7 @@
 
 FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
 
-ARG PNPM_VERSION=11.17.0
+ARG PNPM_VERSION=11.20.0
 
 LABEL org.opencontainers.image.title="Violentmonkey stateless toolchain" \
       org.opencontainers.image.description="Container-only lint, test, and build environment for the Violentmonkey fork" \
