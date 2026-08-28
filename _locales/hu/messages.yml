@@ -63,6 +63,9 @@ buttonInstallOptions:
 buttonNew:
   description: Button to create a new script.
   message: Új
+buttonNewFromFile:
+  description: Button to create a new script from a local file.
+  message: ''
 buttonOK:
   description: OK button on dialog.
   message: Oké
@@ -1144,6 +1147,12 @@ updateScriptsAll:
   message: ''
 updateScriptsInTab:
   description: Command/button to update scripts that run in current tab.
+  message: ''
+userScriptsPermissionNote:
+  description: Text in the popup or dashboard.
+  message: ''
+userScriptsPermissionNoteOld:
+  description: Text in the popup or dashboard in older browsers.
   message: ''
 valueLabelKey:
   description: Label for key of a script value.
