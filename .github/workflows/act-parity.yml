@@ -3,7 +3,7 @@ name: Hosted act parity
 on:
   push:
     branches:
-      - agent/stateless-container-builds
+      - 'agent/**'
   workflow_dispatch:
 
 permissions:
