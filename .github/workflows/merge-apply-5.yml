@@ -1,0 +1,84 @@
+name: Apply synchronized PR5 merge
+
+on:
+  push:
+    branches:
+      - merge-apply-5
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify and apply exact PR5 merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT=440842399357f98c0c36f5065657e270a841c360
+          PR5=c653528212e4037292f164c8e5b162d8f2c1a126
+          EXPECTED_TREE=3a6c55872ab07f64132b5c36e37c53d129c67df5
+          TARGET=agent/issue-18-controlled-reconcile
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin "$TARGET" "$PARENT" "$PR5"
+
+          remote_before="$(git rev-parse "origin/$TARGET")"
+          test "$remote_before" = "$PR5"
+
+          git reset --hard "$PARENT"
+          git merge --no-commit --no-ff "$PR5"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+          actual_files="$(git diff --cached --name-only "$PARENT" | sort)"
+          expected_files="$(cat <<'EOF' | sort
+          src/background/utils/developer-mode.js
+          src/common/developer-mode-reconcile.js
+          src/common/developer-mode-transport.js
+          src/common/developer-mode.js
+          test/common/developer-mode-reconcile.test.js
+          test/common/developer-mode-transport.test.js
+          test/common/developer-mode.test.js
+          EOF
+          )"
+          test "$actual_files" = "$expected_files"
+
+          tree="$(git write-tree)"
+          test "$tree" = "$EXPECTED_TREE"
+
+          message_file="$RUNNER_TEMP/pr5-merge-message.txt"
+          cat > "$message_file" <<'EOF'
+          merge: carry controlled reconcile onto qualified development identity
+
+          Preserve the historically qualified PR #5 controlled-reconcile delta
+          while carrying it onto exact qualified PR #4. Git's three-way merge is
+          conflict-free and the resulting parent delta remains exactly the seven
+          historical PR #5 paths. runtime.reconcile-controlled remains capability-
+          gated; runtime.execute-controlled, browser execution, and postcondition
+          authority remain unavailable.
+          EOF
+
+          merge_sha="$(git commit-tree "$tree" -p "$PR5" -p "$PARENT" < "$message_file")"
+          test "$(git rev-parse "$merge_sha^1")" = "$PR5"
+          test "$(git rev-parse "$merge_sha^2")" = "$PARENT"
+          test "$(git rev-parse "$merge_sha^{tree}")" = "$EXPECTED_TREE"
+
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Synchronized PR #5 merge'
+            echo "- old head: $PR5"
+            echo "- qualified parent: $PARENT"
+            echo "- exact tree: $EXPECTED_TREE"
+            echo "- merge commit: $merge_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          git push origin "$merge_sha:refs/heads/$TARGET"
