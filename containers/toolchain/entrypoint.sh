@@ -108,13 +108,21 @@ if ! sha256sum -c /opt/violentmonkey/dependency-inputs.sha256 >/dev/null 2>&1; t
   exit 3
 fi
 
+if [ -z "${SOURCE_COMMIT:-}" ]; then
+  SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+fi
+if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  emit_event "toolchain.provenance" "failure" "exact source commit is unavailable"
+  echo "An exact 40-character source commit is required for toolchain evidence." >&2
+  exit 4
+fi
+
 # Validate the copied source before adding image-owned dependencies.
 sh ./tools/check-container-policy.sh
 
 rm -rf node_modules
 ln -s /opt/violentmonkey/node_modules node_modules
 
-SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
 emit_event "toolchain.started" "running" "command=$COMMAND sourceCommit=$SOURCE_COMMIT"
 
 check_policy() {

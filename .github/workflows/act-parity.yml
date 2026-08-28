@@ -1,0 +1,78 @@
+name: Hosted act parity
+
+on:
+  push:
+    branches:
+      - 'agent/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: violentmonkey-act-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  act-parity:
+    name: Pinned act workflow parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 100
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Install verified nektos act
+        shell: bash
+        env:
+          ACT_VERSION: 0.2.88
+          ACT_ARCHIVE_SHA256: 1eb9996682dfcc053ac8f3f90f2ec50376f0cdfc229712d82da03d673c63a2b3
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/act_Linux_x86_64.tar.gz"
+          bindir="$RUNNER_TEMP/act-bin"
+          mkdir -p "$bindir"
+          curl --fail --location --silent --show-error \
+            "https://github.com/nektos/act/releases/download/v${ACT_VERSION}/act_Linux_x86_64.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' "$ACT_ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$bindir" act
+          chmod 0555 "$bindir/act"
+          printf '%s\n' "$bindir" >> "$GITHUB_PATH"
+          "$bindir/act" --version | grep -F "$ACT_VERSION"
+
+      - name: Run checked-in workflow through act
+        shell: bash
+        env:
+          VM_NO_CACHE: "1"
+          VM_REBUILD_TOOLCHAIN: "1"
+          VM_ACT_VERSION: 0.2.88
+        run: sh ./tools/ci.sh
+
+      - name: Verify exact-head machine evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f artifacts/container/ci/run-result.json
+          cat artifacts/container/ci/run-result.json
+          jq -e --arg expected "$GITHUB_SHA" \
+            '.status == "success" and .exitCode == 0 and .sourceCommit == $expected' \
+            artifacts/container/ci/run-result.json >/dev/null
+          test -f artifacts/container/ci/build-metadata.json
+          jq -e --arg expected "$GITHUB_SHA" \
+            '.sourceCommit == $expected' \
+            artifacts/container/ci/build-metadata.json >/dev/null
+
+      - name: Upload act parity evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: violentmonkey-act-parity-${{ github.sha }}
+          path: artifacts/container/ci/
+          if-no-files-found: error
+          retention-days: 7

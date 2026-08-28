@@ -27,8 +27,8 @@ addPublicCommands({
       iconUrl: image || defaultImage,
       ...!IS_FIREFOX && {
         requireInteraction: !!onclick,
-      },
-      silent,
+        silent,
+      }
     });
     if (src) {
       const op = notifications[notificationId] = {
