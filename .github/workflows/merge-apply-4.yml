@@ -1,0 +1,92 @@
+name: Apply synchronized PR4 merge
+
+on:
+  push:
+    branches:
+      - merge-apply-4
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify and stage exact PR4 merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=3f9efb76f6808ebd59d4fb4825302da44f61cbea
+          PR4=9f4e0506d9b7c53032e5aaea8545fd687533645b
+          EXPECTED_TREE=3ccf7c7cb3de5bce18d2f3aa5a4bea9268ab24a8
+          TARGET=agent/issue-17-dev-identity
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin "$TARGET" "$BASE" "$PR4"
+          test "$(git rev-parse "origin/$TARGET")" = "$PR4"
+
+          git reset --hard "$BASE"
+          git merge --no-commit --no-ff "$PR4"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+          actual="$(git diff --cached --name-only "$BASE" | sort)"
+          expected="$(cat <<'EOF' | sort
+          .github/workflows/ci.yml
+          docs/WORKBENCH_DEVELOPMENT_IDENTITY.md
+          package.json
+          scripts/manifest-helper.js
+          scripts/workbench-dev-identity.js
+          test/common/workbench-dev-identity.test.js
+          tools/validate-workbench-dev-builds.sh
+          EOF
+          )"
+          test "$actual" = "$expected"
+
+          tree="$(git write-tree)"
+          test "$tree" = "$EXPECTED_TREE"
+          message_file="$RUNNER_TEMP/pr4-message.txt"
+          cat > "$message_file" <<'EOF'
+          merge: carry Workbench development identity onto synchronized Developer Mode
+
+          Preserve the historically qualified PR #4 development-identity delta
+          while carrying it onto exact qualified PR #3. Git's three-way merge is
+          conflict-free and the resulting parent delta remains exactly the seven
+          historical PR #4 paths. Development identity grants no userscript
+          mutation or browser-execution authority.
+          EOF
+          merge_sha="$(git commit-tree "$tree" -p "$PR4" -p "$BASE" < "$message_file")"
+          test "$(git rev-parse "$merge_sha^1")" = "$PR4"
+          test "$(git rev-parse "$merge_sha^2")" = "$BASE"
+          test "$(git rev-parse "$merge_sha^{tree}")" = "$EXPECTED_TREE"
+
+          set +e
+          git push origin "$merge_sha:refs/heads/$TARGET"
+          push_code=$?
+          set -e
+          git fetch --no-tags origin "$TARGET"
+          remote_after="$(git rev-parse "origin/$TARGET")"
+          if test "$push_code" -eq 0; then
+            test "$remote_after" = "$merge_sha"
+          else
+            test "$remote_after" = "$PR4"
+          fi
+
+          echo "VERIFIED_MERGE_SHA=$merge_sha"
+          echo "PUSH_EXIT=$push_code"
+          {
+            echo '### Synchronized PR #4 merge'
+            echo "- old head: $PR4"
+            echo "- qualified parent: $BASE"
+            echo "- exact tree: $EXPECTED_TREE"
+            echo "- verified merge commit: $merge_sha"
+            echo "- Actions push exit: $push_code"
+            echo "- remote after Actions step: $remote_after"
+          } >> "$GITHUB_STEP_SUMMARY"
