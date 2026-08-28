@@ -96,6 +96,7 @@ act workflow_dispatch \
   --platform 'ubuntu-latest=$RunnerImage' \
   --env 'VM_NO_CACHE=$noCache' \
   --env 'VM_REBUILD_TOOLCHAIN=$rebuildToolchain' \
+  --bind \
   --pull=false
 "@
     exit $LASTEXITCODE
@@ -148,6 +149,7 @@ try {
             --platform "ubuntu-latest=$RunnerImage" `
             --env "VM_NO_CACHE=$noCache" `
             --env "VM_REBUILD_TOOLCHAIN=$rebuildToolchain" `
+            --bind `
             --pull=false
         exit $LASTEXITCODE
     }
