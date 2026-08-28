@@ -1,5 +1,11 @@
 # Development
 
+## Coordinator relationship
+
+This repository owns the modified Violentmonkey extension and Developer Mode. It participates in the wider Workbench program coordinated from the sibling `SupraShellScripts/violentmonkey-workbench-private` repository, but it remains independently buildable and does not import private Workbench implementation code.
+
+See [`docs/COORDINATOR_INTEGRATION.md`](docs/COORDINATOR_INTEGRATION.md) and [`coordination/consumer.json`](coordination/consumer.json).
+
 ## Container-only workflow
 
 Do not install Node.js, pnpm, project dependencies, linters, test runners, bundlers, browsers, or release tooling on the host for this repository.
