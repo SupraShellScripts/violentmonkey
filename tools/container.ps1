@@ -14,8 +14,23 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$sourceCommit = (& git -C $RepoRoot rev-parse --verify HEAD 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
+$declaredSourceCommit = if ($env:VM_SOURCE_COMMIT) { [string]$env:VM_SOURCE_COMMIT } else { '' }
+if ($declaredSourceCommit -and $declaredSourceCommit -notmatch '^[0-9a-f]{40}$') {
+    throw 'VM_SOURCE_COMMIT is not an exact lowercase 40-character Git SHA.'
+}
+
+$resolvedSourceCommit = (& git -C $RepoRoot rev-parse --verify HEAD 2>$null | Out-String).Trim()
+$gitResolved = $LASTEXITCODE -eq 0 -and $resolvedSourceCommit -match '^[0-9a-f]{40}$'
+if ($gitResolved) {
+    if ($declaredSourceCommit -and $declaredSourceCommit -ne $resolvedSourceCommit) {
+        throw 'Declared source commit does not match the checkout HEAD.'
+    }
+    $sourceCommit = $resolvedSourceCommit
+}
+elif ($env:ACT -eq 'true' -and $declaredSourceCommit) {
+    $sourceCommit = $declaredSourceCommit
+}
+else {
     throw 'Unable to resolve an exact source commit for container evidence.'
 }
 

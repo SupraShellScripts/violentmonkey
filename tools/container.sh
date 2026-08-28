@@ -7,8 +7,23 @@ if [ "$#" -gt 0 ]; then
   shift
 fi
 
-SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD 2>/dev/null || true)"
-if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+DECLARED_SOURCE_COMMIT="${VM_SOURCE_COMMIT:-}"
+if [ -n "$DECLARED_SOURCE_COMMIT" ] &&
+   ! printf '%s' "$DECLARED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "VM_SOURCE_COMMIT is not an exact lowercase 40-character Git SHA." >&2
+  exit 13
+fi
+
+RESOLVED_SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD 2>/dev/null || true)"
+if printf '%s' "$RESOLVED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  if [ -n "$DECLARED_SOURCE_COMMIT" ] && [ "$DECLARED_SOURCE_COMMIT" != "$RESOLVED_SOURCE_COMMIT" ]; then
+    echo "Declared source commit does not match the checkout HEAD." >&2
+    exit 13
+  fi
+  SOURCE_COMMIT="$RESOLVED_SOURCE_COMMIT"
+elif [ "${ACT:-}" = true ] && [ -n "$DECLARED_SOURCE_COMMIT" ]; then
+  SOURCE_COMMIT="$DECLARED_SOURCE_COMMIT"
+else
   echo "Unable to resolve an exact source commit for container evidence." >&2
   exit 13
 fi

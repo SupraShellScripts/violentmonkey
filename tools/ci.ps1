@@ -10,6 +10,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$sourceCommit = (& git -C $RepoRoot rev-parse --verify HEAD 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
+    throw 'Unable to resolve an exact source commit for act parity.'
+}
+
 $runtimeJson = & (Join-Path $PSScriptRoot 'runtime-detect.ps1')
 $runtime = $runtimeJson | ConvertFrom-Json
 
@@ -96,6 +101,7 @@ act workflow_dispatch \
   --platform 'ubuntu-latest=$RunnerImage' \
   --env 'VM_NO_CACHE=$noCache' \
   --env 'VM_REBUILD_TOOLCHAIN=$rebuildToolchain' \
+  --env 'VM_SOURCE_COMMIT=$sourceCommit' \
   --bind \
   --pull=false
 "@
@@ -149,6 +155,7 @@ try {
             --platform "ubuntu-latest=$RunnerImage" `
             --env "VM_NO_CACHE=$noCache" `
             --env "VM_REBUILD_TOOLCHAIN=$rebuildToolchain" `
+            --env "VM_SOURCE_COMMIT=$sourceCommit" `
             --bind `
             --pull=false
         exit $LASTEXITCODE

@@ -6,6 +6,12 @@ JOB="${1:-ci}"
 ACT_VERSION_REQUIRED="${VM_ACT_VERSION:-0.2.88}"
 RUNNER_IMAGE="${VM_ACT_RUNNER_IMAGE:-violentmonkey-act-runner:local}"
 
+SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD 2>/dev/null || true)"
+if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "Unable to resolve an exact source commit for act parity." >&2
+  exit 19
+fi
+
 sh "$REPO_ROOT/tools/runtime-detect.sh" >/dev/null
 # shellcheck disable=SC1091
 . "$REPO_ROOT/.work/runtime/runtime.env"
@@ -74,5 +80,6 @@ act workflow_dispatch \
   --platform "ubuntu-latest=$RUNNER_IMAGE" \
   --env "VM_NO_CACHE=${VM_NO_CACHE:-0}" \
   --env "VM_REBUILD_TOOLCHAIN=${VM_REBUILD_TOOLCHAIN:-0}" \
+  --env "VM_SOURCE_COMMIT=$SOURCE_COMMIT" \
   --bind \
   --pull=false
