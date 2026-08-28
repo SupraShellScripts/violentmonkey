@@ -19,6 +19,15 @@ buttonConfirmReinstallation:
   description: Button to confirm re-installation when the script is already installed.
   message: Confirm re-installation
   touched: false
+buttonDeveloperModeConnect:
+  description: Connect Developer Mode to its native Workbench host.
+  message: Connect
+buttonDeveloperModeDisconnect:
+  description: Disconnect Developer Mode from its native Workbench host.
+  message: Disconnect
+buttonDeveloperModeRefresh:
+  description: Refresh Developer Mode connection status.
+  message: Refresh status
 buttonDisable:
   description: Button to disable a script.
   message: Disable
@@ -439,6 +448,31 @@ labelDataImport:
   description: Section title of data import.
   message: Data Import
   touched: false
+labelDeveloperMode:
+  description: Explicit opt-in for Workbench integration capabilities under development.
+  message: Enable Developer Mode
+labelDeveloperModeEnable:
+  description: Checkbox that explicitly enables Developer Mode.
+  message: Enable Developer Mode
+labelDeveloperModeHostVersion:
+  description: Developer Mode native host version label.
+  message: 'Host version:'
+labelDeveloperModeRuntime:
+  description: Controlled runtime availability label.
+  message: 'Controlled runtime:'
+labelDeveloperModeSession:
+  description: Ephemeral native host session identifier label.
+  message: 'Session:'
+labelDeveloperModeTransport:
+  description: Native messaging transport status label.
+  message: 'Native host:'
+labelDeveloperModeHint:
+  description: Security and availability warning for Developer Mode.
+  message: >-
+    Enables the versioned Developer Mode capability surface for trusted
+    development tooling. A separately installed compatible Workbench native
+    host is required. Controlled browser execution remains unavailable until
+    separately implemented and authorized.
 labelDonate:
   description: Label of link to donate page.
   message: Donate

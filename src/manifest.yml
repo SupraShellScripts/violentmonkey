@@ -38,6 +38,7 @@ permissions:
   - webRequest
   - webRequestBlocking
   - notifications
+  - nativeMessaging
   - storage
   - unlimitedStorage
   - clipboardWrite

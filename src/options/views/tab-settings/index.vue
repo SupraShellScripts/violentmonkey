@@ -1,6 +1,7 @@
 <template>
   <div ref="$el" class="tab-settings" :data-show-advanced="settings.showAdvanced">
     <h1 v-text="i18n('labelSettings')"></h1>
+    <vm-developer-mode />
     <section>
       <tooltip :content="i18n('labelHttpOnlyCookieHint')">
         <setting-check :name="kGmCookieHttpOnly">
@@ -160,6 +161,7 @@ import SettingsPopup from '@/common/ui/settings-popup.vue';
 import VmImport from './vm-import';
 import VmExport from './vm-export';
 import VmMaintenance from './vm-maintenance';
+import VmDeveloperMode from './vm-developer-mode';
 import VmSync from './vm-sync';
 import VmEditor from './vm-editor';
 import VmBlacklist from './vm-blacklist';

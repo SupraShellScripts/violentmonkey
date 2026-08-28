@@ -1,73 +1,83 @@
-name: CI
+name: Fork Build and Test
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [master]
-    tags-ignore:
-      - 'v*' # version-tagged commits are releases which have their own workflow
-    paths-ignore:
-      - '.github/**' # this ci.yml is also excluded so you need to re-run it explicitly if necessary
-      - src/types.d.ts
-      - LICENSE
-      - README.md
   pull_request:
-    branches: [master]
+    branches:
+      - master
+  push:
+    branches:
+      - 'agent/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: violentmonkey-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
+    name: Container-only CI
     runs-on: ubuntu-latest
-
+    timeout-minutes: 60
     steps:
-      - name: Checkout code
+      - name: Checkout when running on GitHub
+        if: ${{ env.ACT != 'true' }}
         uses: actions/checkout@v6
         with:
-          fetch-depth: 100 # for revision index in version and the `has-changed-path` action
+          fetch-depth: 100
           fetch-tags: true
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - name: Run clean stateless toolchain
+        shell: bash
+        env:
+          VM_NO_CACHE: "1"
+          VM_REBUILD_TOOLCHAIN: "1"
+        run: sh ./tools/container.sh ci
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: 'package.json'
+      - name: Qualify Workbench development artifacts
+        shell: bash
+        env:
+          VM_OUTPUT_DIR: artifacts/container/workbench-identity
+        run: sh ./tools/container.sh exec sh ./tools/validate-workbench-dev-builds.sh
 
-      - name: Install
-        run: pnpm ci
-      - name: Test & Build
+      - name: Summarize machine result
+        if: always()
+        shell: bash
         run: |
-          pnpm exec run-p ci build
-          pnpm build:mv3
-        env:
-          SYNC_DROPBOX_CLIENT_ID: ${{ secrets.SYNC_DROPBOX_CLIENT_ID }}
-          SYNC_GOOGLE_DESKTOP_ID: ${{ secrets.SYNC_GOOGLE_DESKTOP_ID }}
-          SYNC_GOOGLE_DESKTOP_SECRET: ${{ secrets.SYNC_GOOGLE_DESKTOP_SECRET }}
-          SYNC_ONEDRIVE_CLIENT_ID: ${{ secrets.SYNC_ONEDRIVE_CLIENT_ID }}
+          if test -f artifacts/container/ci/run-result.json; then
+            cat artifacts/container/ci/run-result.json
+          else
+            echo '{"schemaVersion":1,"status":"failure","message":"run-result.json missing"}'
+            exit 1
+          fi
 
-      - name: Get version and SHA
-        run: node scripts/action-helper.js ci
-      - name: Upload MV2 zip
-        uses: actions/upload-artifact@v7
-        continue-on-error: true
-        with:
-          name: 'Violentmonkey-test-webext-${{ env.GIT_DESCRIBE }}'
-          path: 'dist/*'
-          if-no-files-found: error
-      - name: Upload MV3 zip
-        uses: actions/upload-artifact@v7
-        continue-on-error: true
-        with:
-          name: 'Violentmonkey-test-mv3-${{ env.GIT_DESCRIBE }}'
-          path: 'dist-mv3/*'
-          if-no-files-found: error
+      - name: Summarize Workbench identity result
+        if: always()
+        shell: bash
+        run: |
+          if test -f artifacts/container/workbench-identity/run-result.json; then
+            cat artifacts/container/workbench-identity/run-result.json
+          else
+            echo '{"schemaVersion":1,"status":"failure","message":"workbench identity run-result.json missing"}'
+            exit 1
+          fi
+          if test -f artifacts/container/workbench-identity/dist/workbench-identity.json; then
+            cat artifacts/container/workbench-identity/dist/workbench-identity.json
+          else
+            echo '{"schemaVersion":1,"status":"failure","message":"workbench identity evidence missing"}'
+            exit 1
+          fi
 
-      - name: Upload to Transifex - check src
-        if: github.event_name == 'push' || github.event.pull_request.merged == true
-        uses: marceloprado/has-changed-path@v1.0.1
-        id: changed-path-src
+      - name: Upload build and validation evidence
+        if: ${{ always() && env.ACT != 'true' }}
+        uses: actions/upload-artifact@v7
         with:
-          paths: src
-      - name: Upload to Transifex
-        if: steps.changed-path-src.outputs.changed == 'true'
-        run: node scripts/transifex.mjs update
-        env:
-          TRANSIFEX_TOKEN: ${{ secrets.TRANSIFEX_TOKEN }}
+          name: violentmonkey-ci-${{ github.sha }}
+          path: |
+            artifacts/container/ci/
+            artifacts/container/workbench-identity/
+          if-no-files-found: warn
+          retention-days: 7

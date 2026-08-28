@@ -1,0 +1,96 @@
+import {
+  createDeveloperModeStatus,
+  DEVELOPER_MODE_PROTOCOL_VERSION,
+  DEVELOPER_MODE_STATUS_OPERATION,
+  shouldDisconnectDeveloperMode,
+} from '@/common/developer-mode';
+import {
+  CONTROLLED_RECONCILE_OPERATION,
+  CONTROLLED_RUNTIME_OPERATION,
+} from '@/common/developer-mode-transport';
+
+const buildStatus = (enabled, extra = {}) => createDeveloperModeStatus({
+  enabled,
+  extensionVersion: '2.46.0',
+  manifestVersion: 3,
+  ...extra,
+});
+
+test('Developer Mode is fail-closed unless explicitly enabled', () => {
+  for (const value of [undefined, null, false, 0, 'true']) {
+    const status = buildStatus(value, {
+      transport: { kind: 'native-messaging', connected: true },
+      negotiatedCapabilities: [
+        CONTROLLED_RECONCILE_OPERATION,
+        CONTROLLED_RUNTIME_OPERATION,
+      ],
+    });
+    expect(status.enabled).toBe(false);
+    expect(status.transport).toEqual({
+      kind: 'native-messaging',
+      connected: false,
+    });
+    expect(status.controlledReconcile).toMatchObject({
+      available: false,
+      negotiated: false,
+    });
+    expect(status.controlledRuntime).toMatchObject({
+      available: false,
+      negotiated: false,
+    });
+  }
+});
+
+test('Developer Mode disable transitions revoke an active session', () => {
+  expect(shouldDisconnectDeveloperMode(true)).toBe(false);
+  for (const value of [undefined, null, false, 0, 'true']) {
+    expect(shouldDisconnectDeveloperMode(value)).toBe(true);
+  }
+});
+
+test('reconcile can be available while full execution remains unavailable', () => {
+  const transport = {
+    kind: 'native-messaging',
+    connected: true,
+    host: 'io.github.suprashellscripts.violentmonkey_workbench',
+    sessionId: 'ephemeral-session',
+  };
+  const status = buildStatus(true, {
+    transport,
+    negotiatedCapabilities: [CONTROLLED_RECONCILE_OPERATION],
+  });
+  expect(status).toMatchObject({
+    schemaVersion: DEVELOPER_MODE_PROTOCOL_VERSION,
+    operation: DEVELOPER_MODE_STATUS_OPERATION,
+    enabled: true,
+    extensionVersion: '2.46.0',
+    manifestVersion: 3,
+    capabilities: ['status', 'native-handshake'],
+    transport,
+    controlledReconcile: {
+      available: true,
+      negotiated: true,
+      operation: CONTROLLED_RECONCILE_OPERATION,
+    },
+    controlledRuntime: {
+      available: false,
+      negotiated: false,
+      operation: CONTROLLED_RUNTIME_OPERATION,
+    },
+  });
+  expect(status.limitation).toMatch(/execution.*remain unavailable/i);
+});
+
+test('negotiated execute capability still does not make full runtime available', () => {
+  const status = buildStatus(true, {
+    transport: { kind: 'native-messaging', connected: true },
+    negotiatedCapabilities: [CONTROLLED_RUNTIME_OPERATION],
+  });
+  expect(status.controlledReconcile.available).toBe(false);
+  expect(status.controlledRuntime).toEqual({
+    available: false,
+    negotiated: true,
+    operation: CONTROLLED_RUNTIME_OPERATION,
+  });
+  expect(status.limitation).toMatch(/not implemented/i);
+});

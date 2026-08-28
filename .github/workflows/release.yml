@@ -1,143 +1,31 @@
-name: Release
+name: Fork Release Candidate
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - v*
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  release-candidate:
+    name: Build unsigned release candidate locally
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-
-      - name: Checkout code
+      - name: Checkout when running on GitHub
+        if: ${{ env.ACT != 'true' }}
         uses: actions/checkout@v6
         with:
-          fetch-depth: 100 # for git history in release info
+          fetch-depth: 100
           fetch-tags: true
-          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - name: Build and validate in the stateless toolchain
+        shell: bash
+        run: sh ./tools/container.sh ci
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: 'package.json'
-
-      - name: Prepare
-        run: pnpm ci && node scripts/action-helper.js
-        env:
-          ACTION_BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          DISCORD_WEBHOOK_RELEASE: ${{ secrets.DISCORD_WEBHOOK_RELEASE }}
-
-      - name: Test
-        run: pnpm run ci
-
-      - name: Build
-        env:
-          SYNC_DROPBOX_CLIENT_ID: ${{ secrets.SYNC_DROPBOX_CLIENT_ID }}
-          SYNC_GOOGLE_DESKTOP_ID: ${{ secrets.SYNC_GOOGLE_DESKTOP_ID }}
-          SYNC_GOOGLE_DESKTOP_SECRET: ${{ secrets.SYNC_GOOGLE_DESKTOP_SECRET }}
-          SYNC_ONEDRIVE_CLIENT_ID: ${{ secrets.SYNC_ONEDRIVE_CLIENT_ID }}
+      - name: Publication safety notice
+        shell: bash
         run: |
-          mkdir -p $ASSETS_DIR $TEMP_DIR
-
-          # Create source zip
-          git archive @ --format=zip > $TEMP_DIR/$SOURCE_ZIP
-          # Include .env to ensure the output is reproducible
-          export | grep SYNC_ | sed -e 's/^declare -x //' > .env \
-            && zip -u $TEMP_DIR/$SOURCE_ZIP .env && rm .env
-
-          # Build for release, also upload to GitHub assets
-          pnpm build
-          # Build one more time to make sure the output is the same
-          # mv dist $TEMP_DIR/dist && pnpm build && diff -qr dist $TEMP_DIR/dist
-
-      - name: Zip
-        run: |
-          cd dist && zip -r ../$ASSETS_DIR/$ASSET_ZIP . && cd ..
-
-          # Build for AMO unlisted, append `BETA` to version name and set update_url for FF
-          # Same as `pnpm build:selfHosted` but only manifest is changed by now
-          TARGET=selfHosted BETA=1 npx gulp manifest
-          cd dist && zip -r ../$TEMP_DIR/$ASSET_SELF_HOSTED_ZIP . && cd ..
-
-      - run: pnpm build:mv3
-        env:
-          SYNC_DROPBOX_CLIENT_ID: ${{ secrets.SYNC_DROPBOX_CLIENT_ID }}
-          SYNC_GOOGLE_DESKTOP_ID: ${{ secrets.SYNC_GOOGLE_DESKTOP_ID }}
-          SYNC_GOOGLE_DESKTOP_SECRET: ${{ secrets.SYNC_GOOGLE_DESKTOP_SECRET }}
-          SYNC_ONEDRIVE_CLIENT_ID: ${{ secrets.SYNC_ONEDRIVE_CLIENT_ID }}
-
-      - name: Zip MV3
-        run: |
-          cd dist-mv3 && zip -r ../$ASSETS_DIR/$ASSET_CWS_ZIP . && cd ..
-
-          # Build for CWS beta, append `BETA` to version name
-          # Same as `BETA=1 pnpm build` but only manifest is changed by now
-          BETA=1 MV3=1 npx gulp manifest
-          cd dist-mv3 && zip -r ../$TEMP_DIR/$ASSET_CWS_BETA_ZIP . && cd ..
-
-      - name: Publish to AMO
-        continue-on-error: true
-        run: |
-          mkdir -p $TEMP_DIR/updates
-          if [ "$PRERELEASE" = "true" ]; then
-            echo Publish unlisted version
-            export BETA=1
-          else
-            echo Publish listed version
-          fi
-          if ! node scripts/amo-upload.mjs 2>"$TEMP_DIR/stderr.log"; then
-            export ERROR=$(cat "$TEMP_DIR/stderr.log" 2>/dev/null || true)
-            ERROR="${ERROR:-AMO publish failed}"
-            echo "$ERROR"
-          fi
-          export TARGET=AMO
-          node scripts/notify-release.mjs
-        env:
-          AMO_KEY: ${{ secrets.AMO_KEY }}
-          AMO_SECRET: ${{ secrets.AMO_SECRET }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Try to publish if not exist
-          AMO_PUBLISH: true
-
-      - name: Publish to CWS
-        continue-on-error: true
-        run: |
-          set -x
-          if [ "$PRERELEASE" != "true" ]; then
-            echo Publish release
-            CWS_EXT_ID=$EXTENSION_ID_RELEASE
-            CWS_SOURCE=$ASSETS_DIR/$ASSET_CWS_ZIP
-          else
-            echo Publish prerelease
-            CWS_EXT_ID=$EXTENSION_ID_BETA
-            CWS_SOURCE=$TEMP_DIR/$ASSET_CWS_BETA_ZIP
-          fi
-          if ! npx chrome-webstore-upload-cli@4 --extension-id $CWS_EXT_ID --source $CWS_SOURCE 2>"$TEMP_DIR/stderr.log"; then
-            export ERROR=$(cat "$TEMP_DIR/stderr.log" 2>/dev/null || true)
-            ERROR="${ERROR:-CWS publish failed}"
-            echo "$ERROR"
-
-            # Ignore pending review error: "❌ You may not edit or publish an item that is in review."
-            if [[ "$ERROR" == *"is in review"* ]]; then
-              echo "::warning::PENDING_REVIEW: skipping CWS publish notification"
-              exit 0
-            fi
-          fi
-          export TARGET=CWS
-          node scripts/notify-release.mjs
-        env:
-          EXTENSION_ID_BETA: opokoaglpekkimldnlggpoagmjegichg
-          EXTENSION_ID_RELEASE: jinjaccalgkegednnccohejagnlnfdag
-          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-
-      - name: Create/Update Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node -e 'import("./scripts/release-helper.mjs").then(({ uploadAssets }) => uploadAssets())';
+          echo "This workflow creates an unsigned local release candidate only."
+          echo "It does not publish to AMO, Chrome Web Store, Edge Add-ons, or GitHub Releases."
+          echo "Fork signing and publication require a separate reviewed least-privilege workflow."

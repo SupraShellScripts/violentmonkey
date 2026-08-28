@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "policy": "container-only-development-tooling",
+  "hostBootstrapAllowlist": [
+    "git",
+    "docker-compatible-runtime",
+    "nektos-act-or-portable-launcher",
+    "powershell-or-posix-shell"
+  ],
+  "containerRequiredCategories": [
+    "package-managers",
+    "compilers-and-transpilers",
+    "bundlers",
+    "linters",
+    "formatters",
+    "unit-test-runners",
+    "integration-test-runners",
+    "formal-model-checkers",
+    "static-analysis",
+    "security-scanners",
+    "license-scanners",
+    "sbom-generators",
+    "documentation-generators",
+    "browser-automation",
+    "browser-binaries",
+    "browser-drivers",
+    "packaging",
+    "signing",
+    "release-evidence",
+    "publication-clients"
+  ],
+  "interfaces": {
+    "human": "PowerShell and POSIX launchers with readable diagnostics",
+    "automation": "stable commands, exit codes, and JSON result files",
+    "agent": "idempotent operations, runtime descriptor, bounded outputs, and no prompts"
+  },
+  "browserTesting": {
+    "default": "headless-disposable-container",
+    "profiles": "ephemeral",
+    "headedException": "explicit manual diagnostics only"
+  },
+  "forbiddenHostArtifacts": [
+    "node_modules",
+    "pnpm-store",
+    "python-virtual-environment",
+    "downloaded-browser-binaries",
+    "global-project-packages"
+  ]
+}
