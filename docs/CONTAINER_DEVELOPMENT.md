@@ -1,23 +1,32 @@
-# Container-only development and local CI
+# Container-only development and CI
 
-Status: proposed implementation
-
-Tracking: `SupraShellScripts/violentmonkey-workbench-private#6`
+Status: proposed implementation under `SupraShellScripts/violentmonkey-workbench-private#6` and synchronization issue #24.
 
 ## Policy
 
-All project tooling runs inside disposable containers. The host is only a bootstrap and orchestration surface.
+Project tooling runs inside disposable containers. The host or CI runner is a bootstrap/orchestration surface, not a place to install project Node.js, pnpm, dependencies, linters, test runners, bundlers, browser binaries, signing clients, or publication tooling.
 
-Allowed host prerequisites:
+Allowed host/runner prerequisites are limited to:
 
 - Git;
 - a supported Docker-compatible runtime;
-- `nektos/act` as the local GitHub Actions orchestrator, either installed or provided as a portable pinned binary;
+- `nektos/act` when local/self-hosted workflow parity is being exercised;
 - PowerShell or a POSIX shell.
 
-The host must not install project Node.js, pnpm, npm dependencies, linters, test runners, bundlers, browser binaries, browser drivers, SBOM tools, scanners, formal model checkers, signing clients, or publication tools.
-
 The machine-readable policy is `tools/tooling-policy.json`.
+
+## Executor routing
+
+Deterministic work is automation-first.
+
+1. For this public repository, portable pull-request and branch validation runs on disposable GitHub-hosted Actions runners by default.
+2. A trusted self-hosted runner may be used for a host/runtime-specific gate when its capabilities and event policy are explicitly suitable.
+3. Local agents may use the same repository-owned launchers when Actions cannot represent the required environment.
+4. Human shell execution is a fallback, not the normal CI backend. A person should be required only for genuine judgment/physical interaction or an explicitly documented temporary exception.
+
+Untrusted public/fork pull-request code must not be routed automatically to a persistent privileged self-hosted runner without a separately reviewed isolation design.
+
+GitHub-hosted CI and local/self-hosted `act` are complementary evidence. Hosted CI proves the portable repository workflow on GitHub's runner environment. `act` is used only when parity with the declared local Docker-compatible orchestration path is itself a material requirement; that distinction does not make the human the executor.
 
 ## Supported container runtimes
 
@@ -37,11 +46,7 @@ Selection order is:
 4. a healthy Podman endpoint;
 5. otherwise fail with diagnostics.
 
-The runtime cannot change during one operation. The selected descriptor is written to:
-
-```text
-.work/runtime/runtime.json
-```
+The runtime cannot change during one operation. The selected descriptor is written to `.work/runtime/runtime.json`.
 
 Explicit controls:
 
@@ -52,11 +57,21 @@ VM_DOCKER_HOST=<docker-compatible-endpoint>
 VM_WSL_DISTRO=<wsl-distribution>
 ```
 
-`act` officially targets the Docker Engine API. Podman support is therefore treated as experimental and requires a Docker-compatible Podman socket identified through `VM_DOCKER_HOST`.
+`act` targets the Docker Engine API. Podman parity is therefore experimental and requires a Docker-compatible Podman socket identified through `VM_DOCKER_HOST`.
 
-## Human, automation, and agent interfaces
+## Stable interfaces
 
-### Human
+### GitHub-hosted automation
+
+`.github/workflows/ci.yml` is the portable public CI entry point. It runs with read-only repository permissions and invokes the same stateless container launcher used elsewhere:
+
+```sh
+sh ./tools/container.sh ci
+```
+
+The workflow performs a clean/no-cache toolchain rebuild for qualification and uploads bounded build/validation evidence.
+
+### Local/self-hosted automation
 
 Windows:
 
@@ -66,7 +81,7 @@ Windows:
 .\tools\ci.ps1
 ```
 
-Linux or WSL:
+POSIX:
 
 ```sh
 sh ./tools/runtime-detect.sh
@@ -74,11 +89,11 @@ sh ./tools/container.sh ci
 sh ./tools/ci.sh
 ```
 
-The commands print readable failures and also produce structured JSON.
+`tools/container.*` runs an individual task through the disposable toolchain. `tools/ci.*` runs the checked-in Actions workflow through `nektos/act` when that parity gate is required.
 
-### Automation
+These are automation interfaces even when launched locally; they must remain non-interactive and machine-readable. Human copy/paste is not a qualification requirement.
 
-Stable commands:
+### Stable commands
 
 ```text
 ci
@@ -91,7 +106,7 @@ build-mv3
 pnpm <args>
 ```
 
-Stable outputs:
+### Stable outputs
 
 ```text
 artifacts/container/<command>/run-result.json
@@ -104,17 +119,15 @@ artifacts/container/<command>/dist-mv3/
 
 Exit status is authoritative. JSON files provide machine-readable detail.
 
-### Agents
+Agent/automation callers must inspect `run-result.json`, bind evidence to the exact source commit, use content hashes, avoid changing runtime selection after discovery, preserve bounded evidence when appropriate, and never infer success only from log prose.
 
-Agent callers must:
+## Source identity and evidence
 
-- invoke noninteractive commands;
-- inspect `run-result.json`;
-- use content hashes and source commit identity;
-- never infer success from log text;
-- avoid changing runtime selection after `.work/runtime/runtime.json` is created;
-- preserve output evidence when opening a pull request;
-- never supply secrets to ordinary build or test operations.
+The host launcher resolves the exact checkout commit before creating the toolchain container and injects that 40-character SHA as `SOURCE_COMMIT`.
+
+The container fails closed if exact source identity is unavailable. `run-result.json` and `build-metadata.json` therefore bind the result to the source revision rather than relying on copied `.git` metadata inside the isolated workspace.
+
+For a pull-request event, GitHub may also create a synthetic merge ref. When exact branch-head provenance is required, use/record the branch-push run whose checkout and uploaded artifact name bind directly to the PR head SHA. Merge-result runs remain useful compatibility evidence but are not silently substituted for exact-head evidence.
 
 ## Toolchain image
 
@@ -126,174 +139,101 @@ containers/toolchain/entrypoint.sh
 containers/images.lock.json
 ```
 
-The base image is pinned by a multi-platform digest. The exact pnpm version is pinned to the version declared by `package.json`.
-
-The dependency layer is built from:
+The base image is pinned by digest. The pnpm version must match `package.json`'s package-manager contract. The dependency layer is built from:
 
 - `package.json`;
 - `pnpm-lock.yaml`;
 - `pnpm-workspace.yaml`.
 
-At runtime, the container verifies those inputs against the image. If they differ, the command fails and requires an image rebuild.
+At runtime, the container verifies those exact dependency inputs against the image and fails if they differ.
 
-The source tree is copied into an ephemeral `/work` directory. The checkout receives no host `node_modules`, and the toolchain writes generated outputs only to `/output`.
+The source tree is copied into an ephemeral work directory. Host `node_modules`, `.env`, `.env.*`, `.secrets`, previous build output, and runtime state are not accepted as project inputs. Image-owned dependencies are linked only after source/policy validation.
 
-The execution workspace excludes local `.env`, `.env.*`, and `.secrets` content. Ordinary build and test operations receive no secrets. A future build-time configuration interface must explicitly allowlist accepted variables and must not forward the host environment wholesale.
-
-The container is:
+Routine execution is:
 
 - removed after execution;
-- disconnected from the network during routine lint, test, and build execution;
-- run with all Linux capabilities dropped;
+- disconnected from the network during lint/test/build execution;
+- run with Linux capabilities dropped;
 - run with `no-new-privileges`;
-- supplied no secrets;
-- unable to persist state except through explicitly copied outputs.
+- supplied no publication secrets;
+- allowed to persist only explicit bounded outputs.
 
-## Local GitHub Actions through `act`
+## GitHub Actions and `act`
 
 The heavy workflow is `.github/workflows/ci.yml`.
 
-It has only a manual `workflow_dispatch` trigger. The normal command is:
+It is intentionally usable in two modes:
 
-```powershell
-.\tools\ci.ps1
-```
+- GitHub-hosted Actions for public portable CI on pull requests, the active foundation branch, and explicit dispatch;
+- `nektos/act` for local/self-hosted parity testing against the same checked-in workflow.
 
-or:
-
-```sh
-sh ./tools/ci.sh
-```
-
-The launcher:
+The `act` launcher:
 
 1. detects and locks the container runtime;
 2. verifies the pinned `act` version;
-3. builds the local `act` runner image when absent;
+3. builds the local act-runner image when absent;
 4. invokes the checked-in workflow;
 5. runs the project toolchain as a nested disposable container;
 6. leaves structured outputs under `artifacts/container/ci`.
 
-The same workflow remains runnable manually on GitHub-hosted Ubuntu as a compatibility fallback, but it is not triggered for every push or pull request.
+Do not duplicate test/build logic in ad-hoc shell snippets merely to change executors.
 
-## Hosted-minute policy
+## GitHub-hosted usage policy
 
-Heavy build, test, browser, packaging, SBOM, and release-candidate jobs are local-first.
+Because this repository is public, hosted Actions are the default for portable deterministic PR validation. The workflow must remain read-only and must not expose publication credentials to untrusted event contexts.
 
-GitHub-hosted jobs should be limited to small checks such as:
+Expensive or host-specific work may move to reviewed reusable images or a trusted self-hosted runner when that improves determinism/cost, but the fallback is automation—not a person operating a shell.
 
-- workflow and metadata schema validation;
-- prohibited secret or binary detection;
-- immutable image-reference verification;
-- local evidence-record validation;
-- repository policy checks.
-
-A future public reusable tooling repository will own shared images and `act` runner conventions:
-
-```text
-SupraShellScripts/stateless-dev-tooling
-```
-
-The separate repository is recommended for reuse, transparency, GHCR package ownership, image testing, SBOMs, and provenance. Project-specific dependency locks and release logic remain in this repository.
+Reusable images and runner conventions should migrate deliberately to `SupraShellScripts/stateless-dev-tooling` after parity evidence. Project-specific dependency locks and release policy remain here.
 
 ## GHCR lifecycle
 
-Development images are built locally first and are not immediately published.
+Development images are built and validated before promotion. An image may be promoted only after its build/tests, consumer parity, SBOM/vulnerability review, supported architectures, source commit/Dockerfile identity, and absence of private source/credentials are established.
 
-An image may be pushed to GHCR only after:
-
-- a no-cache local build succeeds;
-- its own tests pass;
-- a consuming workflow passes through `act`;
-- the SBOM and vulnerability results are reviewed;
-- supported architectures are declared;
-- the source commit and Dockerfile are recorded;
-- no credentials or private source are present.
-
-Routine consumers pin the immutable digest:
+Routine consumers pin immutable digests:
 
 ```text
 ghcr.io/suprashellscripts/violentmonkey-toolchain@sha256:<digest>
 ```
 
-Semantic-version and source-SHA tags are discovery aliases, not authority.
-
-Until the first stable image is promoted, `containers/images.lock.json` records `local-bootstrap`.
+Tags are discovery aliases, not authority. Until a reviewed stable image exists, `containers/images.lock.json` records the local-bootstrap state.
 
 ## Browser testing
 
-Browser acceptance testing defaults to headless, stateless containers.
+Browser acceptance defaults to headless disposable environments with ephemeral profiles, no personal cookies/browser data, no host-installed browser dependency, and bounded traces/screenshots/results. A persistent profile is permitted only when it is the explicit fixture under test.
 
-Separate images will pin:
+Headed execution is a diagnostic exception, not automatically a human release gate. Prefer an appropriate GitHub-hosted or trusted self-hosted runner whenever the browser test can be automated.
 
-- Playwright and its browser binaries;
-- Selenium and browser/driver combinations;
-- Firefox `web-ext`;
-- required fonts and OS libraries.
+## Other development tools
 
-Each run uses:
+The container-only rule applies to ESLint, Prettier, TypeScript/Vue tooling, Jest, Gulp/Webpack, formal model checkers, static/security/license scanners, SBOM generators, documentation tools, browser automation, archive/reproducibility utilities, signing clients, and publication clients.
 
-- an ephemeral browser profile;
-- no personal cookies or browser data;
-- no host-installed browser;
-- no persistent profile unless it is an explicit upgrade-test fixture;
-- a bounded output directory for traces, screenshots, console records, and results.
-
-Headed execution is an explicit manual diagnostic exception, not a release gate.
-
-## All other development tools
-
-The same rule applies to every additional tool introduced later, including:
-
-- ESLint, Prettier, TypeScript, Vue tooling, Jest, Gulp, and Webpack;
-- formal model checkers such as TLA+/TLC, Apalache, Alloy, or SPIN;
-- Semgrep and other static analyzers;
-- license and dependency scanners;
-- SBOM generators;
-- vulnerability scanners;
-- documentation generators;
-- archive and reproducibility utilities;
-- signing and store-publication clients.
-
-Each tool must be:
-
-- declared in a reviewed image definition;
-- version-pinned;
-- invoked through the container interface;
-- absent from host prerequisites;
-- capable of structured output;
-- isolated from secrets unless the operation explicitly requires them.
+Each introduced tool must be version-controlled/pinned, invoked through a reviewed interface, capable of bounded evidence, and isolated from secrets unless the operation explicitly requires them.
 
 ## Release safety
 
-The inherited upstream store-publishing workflows are disabled or replaced by manual, non-publishing guards.
-
-They do not publish to:
+Inherited upstream publication paths are disabled or replaced by fail-closed/manual/read-only guards in this downstream development fork. In particular, ordinary CI must not publish to:
 
 - AMO;
 - Chrome Web Store;
 - Microsoft Edge Add-ons;
 - GitHub Releases;
+- an auto-update branch/channel;
 - Transifex.
 
-Signing, translation synchronization, and publication require separate future least-privilege containers, unique fork identities, reviewed credentials, and an explicit operator action.
+The synchronized fork also disables the inherited MV2 CRX signing/release/updates workflow. Signing or publication requires a separate reviewed authority path with fork-owned identity/key custody, least-privilege permissions, and explicit authorization.
 
-## Validation
+## Qualification
 
-Static validation can be performed without the container runtime, but it is not sufficient for merge approval.
+For a portable public exact head, the first qualification lane is the checked-in GitHub-hosted workflow. Record:
 
-Required local gate on a machine with a supported runtime:
+- exact source SHA;
+- workflow run ID and event type;
+- runner/runtime identity;
+- Node and pnpm versions;
+- policy/lint/test results;
+- MV2/MV3 outputs;
+- checksums/build metadata;
+- uploaded artifact ID/digest.
 
-```powershell
-$env:VM_NO_CACHE = '1'
-$env:VM_REBUILD_TOOLCHAIN = '1'
-.\tools\ci.ps1
-```
-
-or:
-
-```sh
-VM_NO_CACHE=1 VM_REBUILD_TOOLCHAIN=1 sh ./tools/ci.sh
-```
-
-The gate must produce successful `run-result.json`, both `dist/` variants, checksums, and build metadata.
+If `act` parity is materially required, execute the same checked-in workflow on a compatible automation runner and record its runtime/act identity and output digests. Do not claim that parity until it has actually run, and do not require human shell operation merely to obtain it.

@@ -1,0 +1,18 @@
+name: CRX MV2 Publication Disabled for Fork
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain disabled inherited CRX publisher
+        shell: bash
+        run: |
+          echo "The inherited upstream MV2 CRX signing/publication workflow is disabled in this fork."
+          echo "Do not use upstream CRX_PRIVATE_KEY, GitHub Release mutation, or updates-branch deployment from this repository."
+          echo "A future fork-owned CRX channel requires separately reviewed identity, key custody, least-privilege permissions, and explicit publication authority."
