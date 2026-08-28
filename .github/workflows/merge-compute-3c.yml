@@ -1,0 +1,69 @@
+name: Merge compute PR3c
+
+on:
+  push:
+    branches:
+      - agent/merge-compute-3c
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute conflict-free PR3 merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOUNDATION=e1bcf3cdb1c71e8db71b34a5421bd25827f0c1d8
+          PR3=d92a3a6992e24ba8159bfc3ba2a6343c2f330b18
+          git config user.name 'merge-compute'
+          git config user.email 'merge-compute@invalid.local'
+          git fetch --no-tags origin "$PR3"
+          git merge --no-commit --no-ff "$PR3"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git rm -f .github/workflows/merge-compute-3c.yml
+          git diff --cached --check
+
+          actual="$(git diff --cached --name-only "$FOUNDATION" | sort)"
+          expected_files="$(cat <<'EOF' | sort
+          .github/workflows/ci.yml
+          _locales/en/messages.yml
+          src/background/index.js
+          src/background/utils/developer-mode.js
+          src/common/developer-mode-transport.js
+          src/common/developer-mode.js
+          src/common/options-defaults.js
+          src/manifest.yml
+          src/options/views/tab-settings/index.vue
+          src/options/views/tab-settings/vm-developer-mode.vue
+          test/common/developer-mode-transport.test.js
+          test/common/developer-mode.test.js
+          EOF
+          )"
+          test "$actual" = "$expected_files"
+
+          mkdir -p merge-output/.github/workflows merge-output/_locales
+          cp .github/workflows/ci.yml merge-output/.github/workflows/ci.yml
+          cp _locales/en/messages.yml merge-output/_locales/en.messages.yml
+          git write-tree > merge-output/tree.txt
+          git diff --cached --stat "$FOUNDATION" > merge-output/stat.txt
+          git diff --cached --name-only "$FOUNDATION" > merge-output/files.txt
+          git diff --cached "$FOUNDATION" -- .github/workflows/ci.yml _locales/en/messages.yml > merge-output/auto-merge.diff
+          printf '%s\n' "$FOUNDATION" > merge-output/foundation.txt
+          printf '%s\n' "$PR3" > merge-output/pr3.txt
+
+      - name: Upload merged bytes
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr3-merge-compute
+          path: merge-output/
+          if-no-files-found: error
+          retention-days: 1
