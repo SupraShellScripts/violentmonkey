@@ -14,6 +14,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$sourceCommit = (& git -C $RepoRoot rev-parse --verify HEAD 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
+    throw 'Unable to resolve an exact source commit for container evidence.'
+}
+
 $runtimeJson = & (Join-Path $PSScriptRoot 'runtime-detect.ps1')
 if ($LASTEXITCODE -ne 0) {
     throw 'Container runtime detection failed.'
@@ -141,6 +146,7 @@ try {
         '--security-opt', 'no-new-privileges',
         '--env', "VM_RUNTIME_KIND=$($runtime.kind)",
         '--env', "VM_RUNTIME_ENDPOINT=$($runtime.endpoint)",
+        '--env', "SOURCE_COMMIT=$sourceCommit",
         $image,
         $Command
     )
