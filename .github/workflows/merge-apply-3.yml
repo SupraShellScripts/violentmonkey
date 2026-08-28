@@ -1,0 +1,91 @@
+name: Apply synchronized PR3 merge
+
+on:
+  push:
+    branches:
+      - agent/merge-apply-3
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify and apply exact PR3 merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOUNDATION=e1bcf3cdb1c71e8db71b34a5421bd25827f0c1d8
+          PR3=d92a3a6992e24ba8159bfc3ba2a6343c2f330b18
+          EXPECTED_TREE=d816b3553a34e9d581cd9f52e7192551de80fa79
+          TARGET=agent/developer-mode-foundation
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin "$TARGET" "$FOUNDATION" "$PR3"
+
+          remote_before="$(git rev-parse "origin/$TARGET")"
+          test "$remote_before" = "$PR3"
+
+          git reset --hard "$FOUNDATION"
+          git merge --no-commit --no-ff "$PR3"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+          actual_files="$(git diff --cached --name-only "$FOUNDATION" | sort)"
+          expected_files="$(cat <<'EOF' | sort
+          .github/workflows/ci.yml
+          _locales/en/messages.yml
+          src/background/index.js
+          src/background/utils/developer-mode.js
+          src/common/developer-mode-transport.js
+          src/common/developer-mode.js
+          src/common/options-defaults.js
+          src/manifest.yml
+          src/options/views/tab-settings/index.vue
+          src/options/views/tab-settings/vm-developer-mode.vue
+          test/common/developer-mode-transport.test.js
+          test/common/developer-mode.test.js
+          EOF
+          )"
+          test "$actual_files" = "$expected_files"
+
+          tree="$(git write-tree)"
+          test "$tree" = "$EXPECTED_TREE"
+
+          message_file="$RUNNER_TEMP/pr3-merge-message.txt"
+          cat > "$message_file" <<'EOF'
+          merge: carry Developer Mode foundation onto qualified synchronization
+
+          Preserve the historically qualified PR #3 Developer Mode delta while
+          carrying it onto the exact qualified PR #1 foundation. Git's three-way
+          merge is conflict-free; the resulting foundation delta remains exactly
+          the original 12 PR #3 paths. This merge adds no userscript mutation or
+          browser-execution authority and keeps runtime.execute-controlled unavailable.
+          EOF
+
+          merge_sha="$(git commit-tree "$tree" -p "$PR3" -p "$FOUNDATION" < "$message_file")"
+          test "$(git rev-parse "$merge_sha^1")" = "$PR3"
+          test "$(git rev-parse "$merge_sha^2")" = "$FOUNDATION"
+          test "$(git rev-parse "$merge_sha^{tree}")" = "$EXPECTED_TREE"
+
+          git push origin "$merge_sha:refs/heads/$TARGET"
+          git fetch --no-tags origin "$TARGET"
+          remote_after="$(git rev-parse "origin/$TARGET")"
+          test "$remote_after" = "$merge_sha"
+
+          {
+            echo "### Synchronized PR #3 merge"
+            echo "- old head: $PR3"
+            echo "- qualified foundation: $FOUNDATION"
+            echo "- exact tree: $EXPECTED_TREE"
+            echo "- merge commit: $merge_sha"
+            echo "- push: normal fast-forward (no force)"
+          } >> "$GITHUB_STEP_SUMMARY"
