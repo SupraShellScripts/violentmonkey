@@ -2,6 +2,7 @@ import {
   createDeveloperModeStatus,
   DEVELOPER_MODE_PROTOCOL_VERSION,
   DEVELOPER_MODE_STATUS_OPERATION,
+  isCurrentDeveloperModePort,
   shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import {
@@ -46,6 +47,14 @@ test('Developer Mode disable transitions revoke an active session', () => {
   for (const value of [undefined, null, false, 0, 'true']) {
     expect(shouldDisconnectDeveloperMode(value)).toBe(true);
   }
+});
+
+test('stale native-port events cannot revoke the current port generation', () => {
+  const oldPort = {};
+  const currentPort = {};
+  expect(isCurrentDeveloperModePort(currentPort, currentPort)).toBe(true);
+  expect(isCurrentDeveloperModePort(currentPort, oldPort)).toBe(false);
+  expect(isCurrentDeveloperModePort(null, oldPort)).toBe(false);
 });
 
 test('reconcile can be available while full execution remains unavailable', () => {
