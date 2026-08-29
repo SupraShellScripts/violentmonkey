@@ -9,6 +9,9 @@ on:
       - 'scripts/workbench-dev-identity.js'
       - 'tools/smoke-workbench-chromium.js'
       - 'tools/validate-workbench-dev-artifacts.js'
+      - 'tools/check-container-policy.sh'
+      - 'tools/tooling-policy.json'
+      - 'containers/toolchain/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/workbench-browser-smoke.yml'
@@ -20,6 +23,9 @@ on:
       - 'scripts/workbench-dev-identity.js'
       - 'tools/smoke-workbench-chromium.js'
       - 'tools/validate-workbench-dev-artifacts.js'
+      - 'tools/check-container-policy.sh'
+      - 'tools/tooling-policy.json'
+      - 'containers/toolchain/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/workbench-browser-smoke.yml'
@@ -33,8 +39,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    name: Containerized Workbench Chromium build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Build Chromium Workbench artifact in declared toolchain
+        shell: bash
+        run: sh ./tools/container.sh exec npm run build:workbench:chromium
+
+      - name: Upload exact container-produced browser input
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-chromium-build-${{ github.sha }}
+          path: artifacts/container/exec/
+          if-no-files-found: error
+          retention-days: 14
+
   chromium-load:
     name: Chromium load (${{ matrix.os }})
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -45,60 +75,54 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     env:
-      HUSKY: 0
       PLAYWRIGHT_VERSION: 1.62.1
     steps:
-      - name: Check out source
+      - name: Check out source-only smoke harness
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Node 24
-        uses: actions/setup-node@v4
+      - name: Download exact container-produced extension
+        uses: actions/download-artifact@v4
         with:
-          node-version: '24'
+          name: workbench-chromium-build-${{ github.sha }}
+          path: browser-build
 
-      - name: Enable pinned pnpm
+      - name: Verify transferred build evidence
         shell: pwsh
         run: |
-          corepack enable
-          corepack prepare pnpm@11.20.0 --activate
-          node --version
-          pnpm --version
+          $result = Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'browser-build/run-result.json') | ConvertFrom-Json
+          if ($result.status -cne 'success') { throw 'Containerized browser build did not report success.' }
+          if ($result.sourceCommit -cne $env:GITHUB_SHA) {
+            throw "Container build source mismatch: expected $($env:GITHUB_SHA), got $($result.sourceCommit)"
+          }
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'browser-build/dist-mv3/manifest.json'
+          if (-not (Test-Path -LiteralPath $manifest)) { throw 'Transferred Chromium manifest is missing.' }
 
-      - name: Install project dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Chromium Workbench artifact
-        shell: pwsh
-        run: pnpm build:workbench:chromium
-
-      - name: Install isolated pinned Playwright runtime
+      - name: Install isolated pinned host-native browser qualification runtime
         shell: pwsh
         run: |
           $runtime = Join-Path $env:RUNNER_TEMP 'workbench-playwright'
+          $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:RUNNER_TEMP 'playwright-browsers'
           New-Item -ItemType Directory -Force -Path $runtime | Out-Null
-          Push-Location $runtime
-          try {
-            npm init -y | Out-Null
-            npm install --no-audit --no-fund "playwright@$($env:PLAYWRIGHT_VERSION)"
-            if ($env:RUNNER_OS -ceq 'Linux') {
-              npx playwright install --with-deps chromium
-            } else {
-              npx playwright install chromium
-            }
-          } finally {
-            Pop-Location
+          npm install --prefix $runtime --no-audit --no-fund --no-save "playwright@$($env:PLAYWRIGHT_VERSION)" # host-bound-browser-qualification
+          $cli = Join-Path $runtime 'node_modules/playwright/cli.js'
+          if ($env:RUNNER_OS -ceq 'Linux') {
+            node $cli install --with-deps chromium
+          } else {
+            node $cli install chromium
           }
+          node --version
+          node -e "console.log(require(process.argv[1]).version || 'playwright-loaded')" (Join-Path $runtime 'node_modules/playwright/package.json')
 
       - name: Load extension and verify browser-visible identity
         shell: pwsh
         run: |
           $runtime = Join-Path $env:RUNNER_TEMP 'workbench-playwright'
+          $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:RUNNER_TEMP 'playwright-browsers'
           $env:VMWB_PLAYWRIGHT_MODULE = Join-Path $runtime 'node_modules/playwright'
-          $env:VMWB_EXTENSION_PATH = Join-Path $env:GITHUB_WORKSPACE 'dist-mv3'
+          $env:VMWB_EXTENSION_PATH = Join-Path $env:GITHUB_WORKSPACE 'browser-build/dist-mv3'
           $evidenceName = "workbench-chromium-smoke-$($env:RUNNER_OS)-$($env:RUNNER_ARCH).json"
           $env:VMWB_BROWSER_SMOKE_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE $evidenceName
           node tools/smoke-workbench-chromium.js
