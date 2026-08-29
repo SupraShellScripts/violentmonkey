@@ -15,20 +15,6 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/workbench-browser-smoke.yml'
-  push:
-    branches:
-      - 'agent/**'
-    paths:
-      - 'src/**'
-      - 'scripts/workbench-dev-identity.js'
-      - 'tools/smoke-workbench-chromium.js'
-      - 'tools/validate-workbench-dev-artifacts.js'
-      - 'tools/check-container-policy.sh'
-      - 'tools/tooling-policy.json'
-      - 'containers/toolchain/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/workbench-browser-smoke.yml'
   workflow_dispatch:
 
 permissions:
