@@ -15,6 +15,7 @@ jobs:
       EXPECTED_SOURCE: 8dff7d8522007746cf1fe2e0edf05c9ab8651410
       EXPECTED_EXTENSION_ID: mlooodbpjdohbedafmodnmelbmdgmngk
       HUSKY: 0
+      PUPPETEER_CACHE_DIR: ${{ runner.temp }}\puppeteer
     steps:
       - name: Check out exact landed source
         uses: actions/checkout@v4
@@ -30,7 +31,7 @@ jobs:
             throw "Expected landed source $($env:EXPECTED_SOURCE), got $actual"
           }
 
-      - name: Set up Node 24 and pnpm 11.20.0
+      - name: Set up Node 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -51,223 +52,134 @@ jobs:
             throw 'Chromium Workbench manifest was not produced.'
           }
 
-      - name: Ask Chrome to load exact unpacked extension
+      - name: Prepare pinned supported browser harness
         shell: pwsh
         run: |
-          function Get-CdpTargets {
-            $response = Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 5
-            $items = [System.Collections.Generic.List[object]]::new()
-            foreach ($target in $response) {
-              $items.Add($target)
-            }
-            return $items.ToArray()
-          }
-
-          function Receive-CdpMessage {
-            param([Parameter(Mandatory)] [System.Net.WebSockets.ClientWebSocket] $Socket)
-            $buffer = New-Object byte[] 65536
-            $stream = [IO.MemoryStream]::new()
-            try {
-              do {
-                $segment = [ArraySegment[byte]]::new($buffer)
-                $received = $Socket.ReceiveAsync(
-                  $segment,
-                  [Threading.CancellationToken]::None
-                ).GetAwaiter().GetResult()
-                if ($received.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) {
-                  throw 'CDP WebSocket closed before the requested response arrived.'
-                }
-                if ($received.Count -gt 0) {
-                  $stream.Write($buffer, 0, $received.Count)
-                }
-              } until ($received.EndOfMessage)
-              return [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
-            } finally {
-              $stream.Dispose()
-            }
-          }
-
-          function Invoke-CdpEvaluate {
-            param(
-              [Parameter(Mandatory)] [string] $WebSocketUrl,
-              [Parameter(Mandatory)] [string] $Expression
-            )
-
-            $socket = [System.Net.WebSockets.ClientWebSocket]::new()
-            try {
-              $socket.Options.SetRequestHeader('Origin', 'http://localhost')
-              $socket.ConnectAsync([Uri]$WebSocketUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-
-              $requestId = 1
-              $request = @{
-                id = $requestId
-                method = 'Runtime.evaluate'
-                params = @{
-                  expression = $Expression
-                  returnByValue = $true
-                  awaitPromise = $true
-                }
-              } | ConvertTo-Json -Compress -Depth 5
-
-              $bytes = [Text.Encoding]::UTF8.GetBytes($request)
-              $segment = [ArraySegment[byte]]::new($bytes)
-              $socket.SendAsync(
-                $segment,
-                [Net.WebSockets.WebSocketMessageType]::Text,
-                $true,
-                [Threading.CancellationToken]::None
-              ).GetAwaiter().GetResult()
-
-              for ($attempt = 0; $attempt -lt 30; $attempt++) {
-                $reply = Receive-CdpMessage -Socket $socket
-                if ($null -eq $reply.id -or [int]$reply.id -ne $requestId) {
-                  continue
-                }
-                if ($reply.error) {
-                  throw "CDP Runtime.evaluate failed: $($reply.error | ConvertTo-Json -Compress)"
-                }
-                if ($reply.result.exceptionDetails) {
-                  throw "CDP Runtime.evaluate raised an exception: $($reply.result.exceptionDetails | ConvertTo-Json -Compress -Depth 8)"
-                }
-                return $reply.result.result.value
-              }
-              throw 'CDP Runtime.evaluate response id=1 was not observed.'
-            } finally {
-              if ($socket.State -eq [Net.WebSockets.WebSocketState]::Open) {
-                $socket.CloseAsync(
-                  [Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
-                  'done',
-                  [Threading.CancellationToken]::None
-                ).GetAwaiter().GetResult()
-              }
-              $socket.Dispose()
-            }
-          }
-
-          $chromeCandidates = @(
-            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
-            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Google/Chrome/Application/chrome.exe')
-          )
-          $chrome = $chromeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-          if (-not $chrome) {
-            throw 'Google Chrome was not found on the hosted Windows runner.'
-          }
-
-          $dist = (Resolve-Path 'dist-mv3').Path
-          $profile = Join-Path $env:RUNNER_TEMP 'vmwb-chrome-profile'
-          New-Item -ItemType Directory -Force -Path $profile | Out-Null
-
-          $args = @(
-            '--headless=new',
-            '--disable-gpu',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--remote-debugging-port=9222',
-            '--remote-allow-origins=*',
-            "--user-data-dir=$profile",
-            "--disable-extensions-except=$dist",
-            "--load-extension=$dist",
-            'about:blank'
-          )
-
-          $proc = Start-Process -FilePath $chrome -ArgumentList $args -PassThru
+          $harness = Join-Path $env:RUNNER_TEMP 'vmwb-puppeteer'
+          New-Item -ItemType Directory -Force -Path $harness | Out-Null
+          Push-Location $harness
           try {
-            $ready = $false
-            for ($i = 0; $i -lt 40; $i++) {
-              Start-Sleep -Milliseconds 500
-              try {
-                $null = Invoke-RestMethod 'http://127.0.0.1:9222/json/version' -TimeoutSec 2
-                $ready = $true
-                break
-              } catch {}
-            }
-            if (-not $ready) {
-              throw 'Chrome DevTools endpoint did not become ready.'
-            }
-
-            $targetsBefore = @(Get-CdpTargets)
-            $expectedPrefix = "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/"
-            $extensionTargetsBefore = @(
-              foreach ($target in $targetsBefore) {
-                $url = [string]$target.url
-                if ($url.StartsWith($expectedPrefix, [StringComparison]::Ordinal)) {
-                  $target
-                }
-              }
-            )
-
-            $optionsUrl = "$($expectedPrefix)options/index.html"
-            try {
-              $null = Invoke-RestMethod -Method Put "http://127.0.0.1:9222/json/new?$([uri]::EscapeDataString($optionsUrl))" -TimeoutSec 5
-            } catch {
-              Write-Host "CDP target creation returned: $($_.Exception.Message)"
-            }
-            Start-Sleep -Seconds 2
-
-            $targetsAfter = @(Get-CdpTargets)
-            $extensionTargetsAfter = @(
-              foreach ($target in $targetsAfter) {
-                $url = [string]$target.url
-                if ($url.StartsWith($expectedPrefix, [StringComparison]::Ordinal)) {
-                  $target
-                }
-              }
-            )
-            $optionsTargets = @(
-              foreach ($target in $extensionTargetsAfter) {
-                if ([string]::Equals([string]$target.url, $optionsUrl, [StringComparison]::Ordinal)) {
-                  $target
-                }
-              }
-            )
-
-            if ($optionsTargets.Count -ne 1) {
-              Write-Host 'Chrome targets:'
-              $targetsAfter | Select-Object type,title,url | Format-Table -AutoSize | Out-String | Write-Host
-              throw "Expected exactly one loaded Workbench options target, found $($optionsTargets.Count)."
-            }
-
-            $optionsTarget = $optionsTargets[0]
-            if (-not $optionsTarget.webSocketDebuggerUrl) {
-              throw 'Expected extension options target has no CDP WebSocket endpoint.'
-            }
-
-            $runtimeProbe = Invoke-CdpEvaluate -WebSocketUrl ([string]$optionsTarget.webSocketDebuggerUrl) -Expression 'JSON.stringify({href:location.href,id:chrome.runtime.id,connectNative:typeof chrome.runtime.connectNative})'
-            $probe = $runtimeProbe | ConvertFrom-Json
-
-            if (-not [string]::Equals([string]$probe.href, $optionsUrl, [StringComparison]::Ordinal)) {
-              throw "Unexpected extension page href: $($probe.href)"
-            }
-            if (-not [string]::Equals([string]$probe.id, $env:EXPECTED_EXTENSION_ID, [StringComparison]::Ordinal)) {
-              throw "Chrome runtime ID mismatch: expected $($env:EXPECTED_EXTENSION_ID), got $($probe.id)"
-            }
-            if (-not [string]::Equals([string]$probe.connectNative, 'function', [StringComparison]::Ordinal)) {
-              throw "chrome.runtime.connectNative unavailable in loaded Workbench extension: $($probe.connectNative)"
-            }
-
-            $evidence = [ordered]@{
-              schemaVersion = 2
-              status = 'PASS'
-              sourceCommit = $env:EXPECTED_SOURCE
-              extensionId = $env:EXPECTED_EXTENSION_ID
-              browser = (Get-Item $chrome).VersionInfo.ProductVersion
-              runner = $env:RUNNER_OS
-              runId = $env:GITHUB_RUN_ID
-              extensionTargetsBefore = @($extensionTargetsBefore | ForEach-Object { [string]$_.url })
-              extensionTargetsAfter = @($extensionTargetsAfter | ForEach-Object { [string]$_.url })
-              runtimeProbe = [ordered]@{
-                href = [string]$probe.href
-                id = [string]$probe.id
-                connectNative = [string]$probe.connectNative
-              }
-              authorityChange = $false
-              nativeHostRequired = $false
-            }
-            $evidence | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 browser-load-smoke.json
+            npm init -y | Out-Null
+            npm install --save-exact --no-audit --no-fund puppeteer@24.8.1
           } finally {
-            if ($proc -and -not $proc.HasExited) {
-              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Pop-Location
+          }
+
+      - name: Load exact extension with Puppeteer and probe runtime
+        shell: pwsh
+        run: |
+          $harness = Join-Path $env:RUNNER_TEMP 'vmwb-puppeteer'
+          $script = Join-Path $harness 'smoke.cjs'
+          $extensionPath = (Resolve-Path 'dist-mv3').Path
+          $evidencePath = Join-Path $PWD 'browser-load-smoke.json'
+
+          @'
+          const fs = require('fs');
+          const puppeteer = require('puppeteer');
+
+          const extensionPath = process.env.VMWB_EXTENSION_PATH;
+          const evidencePath = process.env.VMWB_EVIDENCE_PATH;
+          const expectedId = process.env.EXPECTED_EXTENSION_ID;
+          const expectedSource = process.env.EXPECTED_SOURCE;
+          const expectedPrefix = `chrome-extension://${expectedId}/`;
+          const optionsUrl = `${expectedPrefix}options/index.html#settings`;
+
+          function assert(condition, message) {
+            if (!condition) throw new Error(message);
+          }
+
+          (async () => {
+            let browser;
+            try {
+              browser = await puppeteer.launch({
+                headless: 'new',
+                pipe: true,
+                enableExtensions: [extensionPath],
+              });
+
+              const workerTarget = await browser.waitForTarget(
+                target => target.type() === 'service_worker'
+                  && target.url().startsWith(expectedPrefix),
+                { timeout: 30000 },
+              );
+              const worker = await workerTarget.worker();
+              assert(worker, 'Expected Workbench extension service worker was not available.');
+
+              const workerProbe = await worker.evaluate(() => ({
+                id: chrome.runtime.id,
+                connectNative: typeof chrome.runtime.connectNative,
+                manifestVersion: chrome.runtime.getManifest().manifest_version,
+                version: chrome.runtime.getManifest().version,
+                name: chrome.runtime.getManifest().name,
+              }));
+
+              assert(workerProbe.id === expectedId,
+                `Worker runtime ID mismatch: expected ${expectedId}, got ${workerProbe.id}`);
+              assert(workerProbe.connectNative === 'function',
+                `Worker connectNative unavailable: ${workerProbe.connectNative}`);
+              assert(workerProbe.manifestVersion === 3,
+                `Expected MV3 worker, got manifest version ${workerProbe.manifestVersion}`);
+
+              const page = await browser.newPage();
+              await page.goto(optionsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+              const pageProbe = await page.evaluate(() => ({
+                href: location.href,
+                id: chrome.runtime.id,
+                connectNative: typeof chrome.runtime.connectNative,
+                manifestVersion: chrome.runtime.getManifest().manifest_version,
+                version: chrome.runtime.getManifest().version,
+                name: chrome.runtime.getManifest().name,
+              }));
+
+              assert(pageProbe.href === optionsUrl,
+                `Options href mismatch: expected ${optionsUrl}, got ${pageProbe.href}`);
+              assert(pageProbe.id === expectedId,
+                `Options runtime ID mismatch: expected ${expectedId}, got ${pageProbe.id}`);
+              assert(pageProbe.connectNative === 'function',
+                `Options connectNative unavailable: ${pageProbe.connectNative}`);
+              assert(pageProbe.manifestVersion === 3,
+                `Expected MV3 options page, got manifest version ${pageProbe.manifestVersion}`);
+
+              const evidence = {
+                schemaVersion: 3,
+                status: 'PASS',
+                sourceCommit: expectedSource,
+                extensionId: expectedId,
+                browser: await browser.version(),
+                runner: process.platform,
+                runId: process.env.GITHUB_RUN_ID,
+                workerUrl: workerTarget.url(),
+                workerProbe,
+                optionsProbe: pageProbe,
+                authorityChange: false,
+                nativeHostRequired: false,
+                harness: {
+                  name: 'puppeteer',
+                  version: require('puppeteer/package.json').version,
+                  extensionLoading: 'enableExtensions',
+                },
+              };
+              fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+            } finally {
+              if (browser) await browser.close();
             }
+          })().catch(err => {
+            console.error(err && err.stack || err);
+            process.exitCode = 1;
+          });
+          '@ | Set-Content -Encoding utf8 $script
+
+          $env:VMWB_EXTENSION_PATH = $extensionPath
+          $env:VMWB_EVIDENCE_PATH = $evidencePath
+          Push-Location $harness
+          try {
+            node $script
+          } finally {
+            Pop-Location
+          }
+
+          if (-not (Test-Path $evidencePath)) {
+            throw 'Puppeteer browser-load evidence was not produced.'
           }
 
       - name: Upload experimental browser evidence
