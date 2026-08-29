@@ -48,7 +48,10 @@ jobs:
 
       - name: Run Developer Mode regression tests
         shell: pwsh
-        run: pnpm exec jest test/common/developer-mode.test.js --runInBand
+        run: |
+          $env:BABEL_ENV = 'test'
+          $env:TEST = 'test'
+          pnpm exec jest test/common/developer-mode.test.js --runInBand
 
       - name: Lint changed lifecycle files
         shell: pwsh
