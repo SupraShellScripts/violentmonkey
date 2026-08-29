@@ -10,6 +10,7 @@ const {
 
 const playwrightModule = process.env.VMWB_PLAYWRIGHT_MODULE || 'playwright';
 const { chromium } = require(playwrightModule);
+const playwrightVersion = require(path.join(playwrightModule, 'package.json')).version;
 
 const extensionPath = path.resolve(
   process.env.VMWB_EXTENSION_PATH || path.join(process.cwd(), 'dist-mv3'),
@@ -73,6 +74,12 @@ function assert(condition, message) {
       sourceCommit: process.env.GITHUB_SHA || null,
       runnerOs: process.env.RUNNER_OS || process.platform,
       runnerArch: process.env.RUNNER_ARCH || process.arch,
+      nodeVersion: process.version,
+      playwrightVersion,
+      profile: {
+        kind: 'persistent-context',
+        ephemeral: true,
+      },
       extensionId,
       runtimeId: observed.runtimeId,
       manifestVersion: observed.manifest.manifest_version,
