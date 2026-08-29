@@ -15,7 +15,6 @@ jobs:
       EXPECTED_SOURCE: 8dff7d8522007746cf1fe2e0edf05c9ab8651410
       EXPECTED_EXTENSION_ID: mlooodbpjdohbedafmodnmelbmdgmngk
       HUSKY: 0
-      PUPPETEER_CACHE_DIR: ${{ runner.temp }}\puppeteer
     steps:
       - name: Check out exact landed source
         uses: actions/checkout@v4
