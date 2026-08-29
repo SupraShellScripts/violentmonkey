@@ -23,7 +23,6 @@
     "documentation-generators",
     "browser-automation",
     "browser-binaries",
-    "browser-drivers",
     "packaging",
     "signing",
     "release-evidence",
@@ -37,13 +36,32 @@
   "browserTesting": {
     "default": "headless-disposable-container",
     "profiles": "ephemeral",
-    "headedException": "explicit manual diagnostics only"
+    "headedException": "explicit manual diagnostics only",
+    "hostNativeQualificationException": {
+      "annotation": "host-bound-browser-qualification",
+      "purpose": "Qualify OS-native browser behavior that a Linux container cannot prove.",
+      "allowedWorkflow": ".github/workflows/workbench-browser-smoke.yml",
+      "runner": "ephemeral-github-hosted-only",
+      "requirements": [
+        "project-build-and-test-tooling-remains-containerized",
+        "browser-automation-version-is-pinned",
+        "browser-automation-and-browser-cache-live-under-runner-temp",
+        "browser-profile-is-ephemeral",
+        "no-production-credentials-signing-or-publication-authority",
+        "machine-evidence-explicitly-bounds-claims"
+      ]
+    }
   },
   "forbiddenHostArtifacts": [
-    "node_modules",
-    "pnpm-store",
+    "persistent-node_modules",
+    "persistent-pnpm-store",
     "python-virtual-environment",
-    "downloaded-browser-binaries",
+    "persistent-downloaded-browser-binaries",
     "global-project-packages"
+  ],
+  "ephemeralHostQualificationArtifacts": [
+    "runner-temp/playwright-node_modules",
+    "runner-temp/playwright-browser-cache",
+    "ephemeral-browser-profile"
   ]
 }
