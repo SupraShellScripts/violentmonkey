@@ -63,6 +63,30 @@ jobs:
             return $items.ToArray()
           }
 
+          function Receive-CdpMessage {
+            param([Parameter(Mandatory)] [System.Net.WebSockets.ClientWebSocket] $Socket)
+            $buffer = New-Object byte[] 65536
+            $stream = [IO.MemoryStream]::new()
+            try {
+              do {
+                $segment = [ArraySegment[byte]]::new($buffer)
+                $received = $Socket.ReceiveAsync(
+                  $segment,
+                  [Threading.CancellationToken]::None
+                ).GetAwaiter().GetResult()
+                if ($received.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) {
+                  throw 'CDP WebSocket closed before the requested response arrived.'
+                }
+                if ($received.Count -gt 0) {
+                  $stream.Write($buffer, 0, $received.Count)
+                }
+              } until ($received.EndOfMessage)
+              return [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
+            } finally {
+              $stream.Dispose()
+            }
+          }
+
           function Invoke-CdpEvaluate {
             param(
               [Parameter(Mandatory)] [string] $WebSocketUrl,
@@ -74,8 +98,9 @@ jobs:
               $socket.Options.SetRequestHeader('Origin', 'http://localhost')
               $socket.ConnectAsync([Uri]$WebSocketUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
 
+              $requestId = 1
               $request = @{
-                id = 1
+                id = $requestId
                 method = 'Runtime.evaluate'
                 params = @{
                   expression = $Expression
@@ -93,24 +118,20 @@ jobs:
                 [Threading.CancellationToken]::None
               ).GetAwaiter().GetResult()
 
-              $buffer = New-Object byte[] 65536
-              $stream = [IO.MemoryStream]::new()
-              do {
-                $receiveSegment = [ArraySegment[byte]]::new($buffer)
-                $received = $socket.ReceiveAsync(
-                  $receiveSegment,
-                  [Threading.CancellationToken]::None
-                ).GetAwaiter().GetResult()
-                if ($received.Count -gt 0) {
-                  $stream.Write($buffer, 0, $received.Count)
+              for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                $reply = Receive-CdpMessage -Socket $socket
+                if ($null -eq $reply.id -or [int]$reply.id -ne $requestId) {
+                  continue
                 }
-              } until ($received.EndOfMessage)
-
-              $reply = [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
-              if ($reply.error) {
-                throw "CDP Runtime.evaluate failed: $($reply.error | ConvertTo-Json -Compress)"
+                if ($reply.error) {
+                  throw "CDP Runtime.evaluate failed: $($reply.error | ConvertTo-Json -Compress)"
+                }
+                if ($reply.result.exceptionDetails) {
+                  throw "CDP Runtime.evaluate raised an exception: $($reply.result.exceptionDetails | ConvertTo-Json -Compress -Depth 8)"
+                }
+                return $reply.result.result.value
               }
-              return $reply.result.result.value
+              throw 'CDP Runtime.evaluate response id=1 was not observed.'
             } finally {
               if ($socket.State -eq [Net.WebSockets.WebSocketState]::Open) {
                 $socket.CloseAsync(
