@@ -3,7 +3,6 @@ import {
   canEstablishDeveloperModePort,
   canRevokeDeveloperModePort,
   createDeveloperModeStatus,
-  isCurrentDeveloperModePort,
   shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import {
