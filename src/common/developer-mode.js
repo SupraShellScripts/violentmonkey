@@ -11,6 +11,10 @@ export function shouldDisconnectDeveloperMode(value) {
   return value !== true;
 }
 
+export function isCurrentDeveloperModePort(currentPort, eventPort) {
+  return currentPort === eventPort;
+}
+
 export function createDeveloperModeStatus({
   enabled,
   extensionVersion,

@@ -1,6 +1,7 @@
 import browser from '@/common/browser';
 import {
   createDeveloperModeStatus,
+  isCurrentDeveloperModePort,
   shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import {
@@ -103,7 +104,8 @@ async function connect() {
     const establishedPort = port;
     establishedPort.onMessage.addListener(
       message => onNativeMessage(establishedPort, message));
-    establishedPort.onDisconnect.addListener(onDisconnect);
+    establishedPort.onDisconnect.addListener(
+      () => onDisconnect(establishedPort));
     return getStatus();
   } catch (err) {
     disconnect(String(err?.message || err));
@@ -124,7 +126,10 @@ function disconnect(error = null) {
   return getStatus();
 }
 
-function onDisconnect() {
+function onDisconnect(disconnectedPort) {
+  // Port events may be delivered after a reconnect. A stale generation must
+  // never revoke the newer session or its negotiated capability state.
+  if (!isCurrentDeveloperModePort(port, disconnectedPort)) return;
   const error = browser.runtime.lastError?.message || 'Native host disconnected.';
   port = null;
   negotiatedCapabilities = [];
