@@ -1,4 +1,4 @@
-name: Qualify landed Workbench extension portability matrix
+name: Qualify Workbench portability matrix
 
 on:
   push:
@@ -19,13 +19,13 @@ jobs:
           - macos-latest
     runs-on: ${{ matrix.os }}
     env:
-      EXPECTED_SOURCE: 8dff7d8522007746cf1fe2e0edf05c9ab8651410
+      EXPECTED_SOURCE: 8f2858f1ab5acbac047875bc3590eb231d10d210
       HUSKY: 0
     steps:
-      - name: Check out exact landed public source
+      - name: Check out exact public source
         uses: actions/checkout@v4
         with:
-          ref: 8dff7d8522007746cf1fe2e0edf05c9ab8651410
+          ref: 8f2858f1ab5acbac047875bc3590eb231d10d210
           fetch-depth: 1
 
       - name: Verify exact source identity
@@ -61,9 +61,9 @@ jobs:
           $env:TEST = 'test'
           pnpm exec jest test/common/developer-mode.test.js --runInBand
 
-      - name: Lint lifecycle files
+      - name: Lint portability and lifecycle files
         shell: pwsh
-        run: pnpm exec eslint src/background/utils/developer-mode.js src/common/developer-mode.js test/common/developer-mode.test.js
+        run: pnpm exec eslint src/background/utils/developer-mode.js src/common/developer-mode.js test/common/developer-mode.test.js tools/validate-workbench-dev-artifacts.js
 
       - name: Build Workbench Firefox development artifact
         shell: pwsh
@@ -73,9 +73,15 @@ jobs:
         shell: pwsh
         run: pnpm build:workbench:chromium
 
+      - name: Validate built artifact identities directly
+        shell: pwsh
+        run: node tools/validate-workbench-dev-artifacts.js
+
       - name: Record OS-specific evidence
         shell: pwsh
         run: |
+          $identity = Get-Content -Raw dist/workbench-identity.json | ConvertFrom-Json
+          if ($identity.status -cne 'success') { throw 'Portable identity validator did not report success.' }
           $evidence = [ordered]@{
             schemaVersion = 1
             status = 'PASS'
@@ -88,16 +94,20 @@ jobs:
             node = (node --version).Trim()
             pnpm = (pnpm --version).Trim()
             powershell = ($PSVersionTable.PSVersion.ToString())
+            firefoxExtensionId = $identity.firefox.extensionId
+            chromiumExtensionId = $identity.chromium.extensionId
             checks = @(
-              'exact-landed-source-identity',
+              'exact-source-identity',
               'developer-mode-lifecycle-regression',
-              'lifecycle-lint',
+              'portable-validator-lint',
               'workbench-firefox-build',
-              'workbench-chromium-build'
+              'workbench-chromium-build',
+              'portable-artifact-identity-validation'
             )
             claims = [ordered]@{
               extensionLifecyclePortable = $true
               developmentBuildPortable = $true
+              artifactIdentityValidatorPortable = $true
               nativeHostIntegration = $false
               controllerIngressPortable = $false
               browserE2EQualified = $false
@@ -110,7 +120,10 @@ jobs:
       - name: Upload immutable OS evidence
         uses: actions/upload-artifact@v4
         with:
-          name: landed-portability-${{ runner.os }}-${{ runner.arch }}-${{ env.EXPECTED_SOURCE }}
-          path: portability-*.json
+          name: portability-${{ runner.os }}-${{ runner.arch }}-${{ env.EXPECTED_SOURCE }}
+          path: |
+            portability-*.json
+            dist/workbench-identity.json
+            dist-mv3/workbench-identity.json
           if-no-files-found: error
           retention-days: 14
