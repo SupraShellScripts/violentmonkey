@@ -12,6 +12,15 @@ jq -e '.policy == "container-only-development-tooling"' tools/tooling-policy.jso
 HOST_BROWSER_ANNOTATION='host-bound-browser-qualification'
 HOST_BROWSER_WORKFLOW='.github/workflows/workbench-browser-smoke.yml'
 
+jq -e \
+  --arg annotation "$HOST_BROWSER_ANNOTATION" \
+  --arg workflow "$HOST_BROWSER_WORKFLOW" \
+  '.browserTesting.hostNativeQualificationException.annotation == $annotation
+   and .browserTesting.hostNativeQualificationException.allowedWorkflow == $workflow
+   and .browserTesting.hostNativeQualificationException.runner == "ephemeral-github-hosted-only"' \
+  tools/tooling-policy.json >/dev/null ||
+  fail "host-native browser qualification enforcement does not match tooling-policy.json"
+
 if grep -R -n -E \
   'actions/setup-node|pnpm/action-setup|(^|[[:space:]])(npm|pnpm|npx)[[:space:]]+(install|ci|run|exec)' \
   .github/workflows \
