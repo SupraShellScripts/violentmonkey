@@ -54,6 +54,75 @@ jobs:
       - name: Ask Chrome to load exact unpacked extension
         shell: pwsh
         run: |
+          function Get-CdpTargets {
+            $response = Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 5
+            $items = [System.Collections.Generic.List[object]]::new()
+            foreach ($target in $response) {
+              $items.Add($target)
+            }
+            return $items.ToArray()
+          }
+
+          function Invoke-CdpEvaluate {
+            param(
+              [Parameter(Mandatory)] [string] $WebSocketUrl,
+              [Parameter(Mandatory)] [string] $Expression
+            )
+
+            $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+            try {
+              $socket.Options.SetRequestHeader('Origin', 'http://localhost')
+              $socket.ConnectAsync([Uri]$WebSocketUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+
+              $request = @{
+                id = 1
+                method = 'Runtime.evaluate'
+                params = @{
+                  expression = $Expression
+                  returnByValue = $true
+                  awaitPromise = $true
+                }
+              } | ConvertTo-Json -Compress -Depth 5
+
+              $bytes = [Text.Encoding]::UTF8.GetBytes($request)
+              $segment = [ArraySegment[byte]]::new($bytes)
+              $socket.SendAsync(
+                $segment,
+                [Net.WebSockets.WebSocketMessageType]::Text,
+                $true,
+                [Threading.CancellationToken]::None
+              ).GetAwaiter().GetResult()
+
+              $buffer = New-Object byte[] 65536
+              $stream = [IO.MemoryStream]::new()
+              do {
+                $receiveSegment = [ArraySegment[byte]]::new($buffer)
+                $received = $socket.ReceiveAsync(
+                  $receiveSegment,
+                  [Threading.CancellationToken]::None
+                ).GetAwaiter().GetResult()
+                if ($received.Count -gt 0) {
+                  $stream.Write($buffer, 0, $received.Count)
+                }
+              } until ($received.EndOfMessage)
+
+              $reply = [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
+              if ($reply.error) {
+                throw "CDP Runtime.evaluate failed: $($reply.error | ConvertTo-Json -Compress)"
+              }
+              return $reply.result.result.value
+            } finally {
+              if ($socket.State -eq [Net.WebSockets.WebSocketState]::Open) {
+                $socket.CloseAsync(
+                  [Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
+                  'done',
+                  [Threading.CancellationToken]::None
+                ).GetAwaiter().GetResult()
+              }
+              $socket.Dispose()
+            }
+          }
+
           $chromeCandidates = @(
             (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
             (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Google/Chrome/Application/chrome.exe')
@@ -73,6 +142,7 @@ jobs:
             '--no-first-run',
             '--no-default-browser-check',
             '--remote-debugging-port=9222',
+            '--remote-allow-origins=*',
             "--user-data-dir=$profile",
             "--disable-extensions-except=$dist",
             "--load-extension=$dist",
@@ -94,37 +164,85 @@ jobs:
               throw 'Chrome DevTools endpoint did not become ready.'
             }
 
-            $targets = @(Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 5)
-            $extensionTargets = @($targets | Where-Object { $_.url -like "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/*" })
+            $targetsBefore = @(Get-CdpTargets)
+            $expectedPrefix = "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/"
+            $extensionTargetsBefore = @(
+              foreach ($target in $targetsBefore) {
+                $url = [string]$target.url
+                if ($url.StartsWith($expectedPrefix, [StringComparison]::Ordinal)) {
+                  $target
+                }
+              }
+            )
 
-            # Force an extension-owned page target as a second browser-level acceptance signal.
-            $optionsUrl = "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/options/index.html"
+            # Force an extension-owned page and then verify the page from inside
+            # Chrome, not merely by trusting the requested target URL.
+            $optionsUrl = "$($expectedPrefix)options/index.html"
             try {
               $null = Invoke-RestMethod -Method Put "http://127.0.0.1:9222/json/new?$([uri]::EscapeDataString($optionsUrl))" -TimeoutSec 5
             } catch {
               Write-Host "CDP target creation returned: $($_.Exception.Message)"
             }
             Start-Sleep -Seconds 2
-            $targetsAfter = @(Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 5)
-            $extensionTargetsAfter = @($targetsAfter | Where-Object { $_.url -like "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/*" })
 
-            $runtimeSeen = ($extensionTargets.Count -gt 0) -or ($extensionTargetsAfter.Count -gt 0)
-            if (-not $runtimeSeen) {
+            $targetsAfter = @(Get-CdpTargets)
+            $extensionTargetsAfter = @(
+              foreach ($target in $targetsAfter) {
+                $url = [string]$target.url
+                if ($url.StartsWith($expectedPrefix, [StringComparison]::Ordinal)) {
+                  $target
+                }
+              }
+            )
+            $optionsTargets = @(
+              foreach ($target in $extensionTargetsAfter) {
+                if ([string]::Equals([string]$target.url, $optionsUrl, [StringComparison]::Ordinal)) {
+                  $target
+                }
+              }
+            )
+
+            if ($optionsTargets.Count -ne 1) {
               Write-Host 'Chrome targets:'
               $targetsAfter | Select-Object type,title,url | Format-Table -AutoSize | Out-String | Write-Host
-              throw "Chrome did not expose any target owned by expected extension $($env:EXPECTED_EXTENSION_ID)."
+              throw "Expected exactly one loaded Workbench options target, found $($optionsTargets.Count)."
+            }
+
+            $optionsTarget = $optionsTargets[0]
+            if (-not $optionsTarget.webSocketDebuggerUrl) {
+              throw 'Expected extension options target has no CDP WebSocket endpoint.'
+            }
+
+            $runtimeProbe = Invoke-CdpEvaluate \
+              -WebSocketUrl ([string]$optionsTarget.webSocketDebuggerUrl) \
+              -Expression 'JSON.stringify({href:location.href,id:chrome.runtime.id,connectNative:typeof chrome.runtime.connectNative})'
+            $probe = $runtimeProbe | ConvertFrom-Json
+
+            if (-not [string]::Equals([string]$probe.href, $optionsUrl, [StringComparison]::Ordinal)) {
+              throw "Unexpected extension page href: $($probe.href)"
+            }
+            if (-not [string]::Equals([string]$probe.id, $env:EXPECTED_EXTENSION_ID, [StringComparison]::Ordinal)) {
+              throw "Chrome runtime ID mismatch: expected $($env:EXPECTED_EXTENSION_ID), got $($probe.id)"
+            }
+            if (-not [string]::Equals([string]$probe.connectNative, 'function', [StringComparison]::Ordinal)) {
+              throw "chrome.runtime.connectNative unavailable in loaded Workbench extension: $($probe.connectNative)"
             }
 
             $evidence = [ordered]@{
-              schemaVersion = 1
+              schemaVersion = 2
               status = 'PASS'
               sourceCommit = $env:EXPECTED_SOURCE
               extensionId = $env:EXPECTED_EXTENSION_ID
               browser = (Get-Item $chrome).VersionInfo.ProductVersion
               runner = $env:RUNNER_OS
               runId = $env:GITHUB_RUN_ID
-              extensionTargetsBefore = @($extensionTargets | ForEach-Object { $_.url })
-              extensionTargetsAfter = @($extensionTargetsAfter | ForEach-Object { $_.url })
+              extensionTargetsBefore = @($extensionTargetsBefore | ForEach-Object { [string]$_.url })
+              extensionTargetsAfter = @($extensionTargetsAfter | ForEach-Object { [string]$_.url })
+              runtimeProbe = [ordered]@{
+                href = [string]$probe.href
+                id = [string]$probe.id
+                connectNative = [string]$probe.connectNative
+              }
               authorityChange = $false
               nativeHostRequired = $false
             }
