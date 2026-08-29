@@ -1,4 +1,6 @@
 import {
+  canEstablishDeveloperModePort,
+  canRevokeDeveloperModePort,
   createDeveloperModeStatus,
   DEVELOPER_MODE_PROTOCOL_VERSION,
   DEVELOPER_MODE_STATUS_OPERATION,
@@ -55,6 +57,23 @@ test('stale native-port events cannot revoke the current port generation', () =>
   expect(isCurrentDeveloperModePort(currentPort, currentPort)).toBe(true);
   expect(isCurrentDeveloperModePort(currentPort, oldPort)).toBe(false);
   expect(isCurrentDeveloperModePort(null, oldPort)).toBe(false);
+});
+
+test('stale handshake generations cannot establish or revoke newer state', () => {
+  const oldPort = {};
+  const currentPort = {};
+
+  expect(canEstablishDeveloperModePort(oldPort, oldPort, true)).toBe(true);
+  expect(canRevokeDeveloperModePort(oldPort, oldPort)).toBe(true);
+
+  expect(canEstablishDeveloperModePort(currentPort, oldPort, true)).toBe(false);
+  expect(canRevokeDeveloperModePort(currentPort, oldPort)).toBe(false);
+
+  expect(canEstablishDeveloperModePort(currentPort, currentPort, false)).toBe(false);
+  expect(canEstablishDeveloperModePort(currentPort, currentPort, 'true')).toBe(false);
+
+  expect(canEstablishDeveloperModePort(null, null, true)).toBe(false);
+  expect(canRevokeDeveloperModePort(null, null)).toBe(false);
 });
 
 test('reconcile can be available while full execution remains unavailable', () => {
