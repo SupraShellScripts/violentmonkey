@@ -175,8 +175,6 @@ jobs:
               }
             )
 
-            # Force an extension-owned page and then verify the page from inside
-            # Chrome, not merely by trusting the requested target URL.
             $optionsUrl = "$($expectedPrefix)options/index.html"
             try {
               $null = Invoke-RestMethod -Method Put "http://127.0.0.1:9222/json/new?$([uri]::EscapeDataString($optionsUrl))" -TimeoutSec 5
@@ -213,9 +211,7 @@ jobs:
               throw 'Expected extension options target has no CDP WebSocket endpoint.'
             }
 
-            $runtimeProbe = Invoke-CdpEvaluate \
-              -WebSocketUrl ([string]$optionsTarget.webSocketDebuggerUrl) \
-              -Expression 'JSON.stringify({href:location.href,id:chrome.runtime.id,connectNative:typeof chrome.runtime.connectNative})'
+            $runtimeProbe = Invoke-CdpEvaluate -WebSocketUrl ([string]$optionsTarget.webSocketDebuggerUrl) -Expression 'JSON.stringify({href:location.href,id:chrome.runtime.id,connectNative:typeof chrome.runtime.connectNative})'
             $probe = $runtimeProbe | ConvertFrom-Json
 
             if (-not [string]::Equals([string]$probe.href, $optionsUrl, [StringComparison]::Ordinal)) {
