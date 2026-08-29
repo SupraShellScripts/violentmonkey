@@ -1,0 +1,54 @@
+name: Mark qualified PR7 ready
+
+on:
+  push:
+    branches:
+      - maintenance/ready-pr7
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard exact qualified PR and mark ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: 6614bbb1a208c3cf8d604987cf93608077d76626
+          EXPECTED_BASE: 363b78180b37cdddf940d01c7f03d92c5bbf8f69
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/7")"
+          head="$(jq -r '.head.sha' <<<"$pr_json")"
+          base="$(jq -r '.base.sha' <<<"$pr_json")"
+          draft="$(jq -r '.draft' <<<"$pr_json")"
+          state="$(jq -r '.state' <<<"$pr_json")"
+
+          test "$head" = "$EXPECTED_HEAD"
+          test "$base" = "$EXPECTED_BASE"
+          test "$draft" = "true"
+          test "$state" = "open"
+
+          pr_id="$(gh api graphql \
+            -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){id}}}' \
+            -F owner='SupraShellScripts' \
+            -F name='violentmonkey' \
+            -F number=7 \
+            --jq '.data.repository.pullRequest.id')"
+
+          test -n "$pr_id"
+
+          gh api graphql \
+            -f query='mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{number isDraft}}}' \
+            -F id="$pr_id" \
+            --jq '.data.markPullRequestReadyForReview.pullRequest'
+
+          after="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/7")"
+          test "$(jq -r '.head.sha' <<<"$after")" = "$EXPECTED_HEAD"
+          test "$(jq -r '.base.sha' <<<"$after")" = "$EXPECTED_BASE"
+          test "$(jq -r '.draft' <<<"$after")" = "false"
+          test "$(jq -r '.state' <<<"$after")" = "open"
