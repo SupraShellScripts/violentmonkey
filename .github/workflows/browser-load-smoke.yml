@@ -1,0 +1,144 @@
+name: Experimental Workbench browser-load smoke
+
+on:
+  push:
+    branches:
+      - maintenance/browser-load-smoke
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-load-smoke:
+    runs-on: windows-latest
+    env:
+      EXPECTED_SOURCE: 8dff7d8522007746cf1fe2e0edf05c9ab8651410
+      EXPECTED_EXTENSION_ID: mlooodbpjdohbedafmodnmelbmdgmngk
+      HUSKY: 0
+    steps:
+      - name: Check out exact landed source
+        uses: actions/checkout@v4
+        with:
+          ref: 8dff7d8522007746cf1fe2e0edf05c9ab8651410
+          fetch-depth: 1
+
+      - name: Verify exact landed source
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -cne $env:EXPECTED_SOURCE) {
+            throw "Expected landed source $($env:EXPECTED_SOURCE), got $actual"
+          }
+
+      - name: Set up Node 24 and pnpm 11.20.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Enable pinned pnpm
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.20.0 --activate
+          pnpm --version
+
+      - name: Install and build Chromium Workbench extension
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:workbench:chromium
+          if (-not (Test-Path 'dist-mv3/manifest.json')) {
+            throw 'Chromium Workbench manifest was not produced.'
+          }
+
+      - name: Ask Chrome to load exact unpacked extension
+        shell: pwsh
+        run: |
+          $chromeCandidates = @(
+            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Google/Chrome/Application/chrome.exe')
+          )
+          $chrome = $chromeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $chrome) {
+            throw 'Google Chrome was not found on the hosted Windows runner.'
+          }
+
+          $dist = (Resolve-Path 'dist-mv3').Path
+          $profile = Join-Path $env:RUNNER_TEMP 'vmwb-chrome-profile'
+          New-Item -ItemType Directory -Force -Path $profile | Out-Null
+
+          $args = @(
+            '--headless=new',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--remote-debugging-port=9222',
+            "--user-data-dir=$profile",
+            "--disable-extensions-except=$dist",
+            "--load-extension=$dist",
+            'about:blank'
+          )
+
+          $proc = Start-Process -FilePath $chrome -ArgumentList $args -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 40; $i++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $null = Invoke-RestMethod 'http://127.0.0.1:9222/json/version' -TimeoutSec 2
+                $ready = $true
+                break
+              } catch {}
+            }
+            if (-not $ready) {
+              throw 'Chrome DevTools endpoint did not become ready.'
+            }
+
+            $targets = @(Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 5)
+            $extensionTargets = @($targets | Where-Object { $_.url -like "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/*" })
+
+            # Force an extension-owned page target as a second browser-level acceptance signal.
+            $optionsUrl = "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/options/index.html"
+            try {
+              $null = Invoke-RestMethod -Method Put "http://127.0.0.1:9222/json/new?$([uri]::EscapeDataString($optionsUrl))" -TimeoutSec 5
+            } catch {
+              Write-Host "CDP target creation returned: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 2
+            $targetsAfter = @(Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 5)
+            $extensionTargetsAfter = @($targetsAfter | Where-Object { $_.url -like "chrome-extension://$($env:EXPECTED_EXTENSION_ID)/*" })
+
+            $runtimeSeen = ($extensionTargets.Count -gt 0) -or ($extensionTargetsAfter.Count -gt 0)
+            if (-not $runtimeSeen) {
+              Write-Host 'Chrome targets:'
+              $targetsAfter | Select-Object type,title,url | Format-Table -AutoSize | Out-String | Write-Host
+              throw "Chrome did not expose any target owned by expected extension $($env:EXPECTED_EXTENSION_ID)."
+            }
+
+            $evidence = [ordered]@{
+              schemaVersion = 1
+              status = 'PASS'
+              sourceCommit = $env:EXPECTED_SOURCE
+              extensionId = $env:EXPECTED_EXTENSION_ID
+              browser = (Get-Item $chrome).VersionInfo.ProductVersion
+              runner = $env:RUNNER_OS
+              runId = $env:GITHUB_RUN_ID
+              extensionTargetsBefore = @($extensionTargets | ForEach-Object { $_.url })
+              extensionTargetsAfter = @($extensionTargetsAfter | ForEach-Object { $_.url })
+              authorityChange = $false
+              nativeHostRequired = $false
+            }
+            $evidence | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 browser-load-smoke.json
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Upload experimental browser evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-browser-load-smoke-${{ env.EXPECTED_SOURCE }}
+          path: browser-load-smoke.json
+          if-no-files-found: error
+          retention-days: 14
