@@ -15,6 +15,17 @@ export function isCurrentDeveloperModePort(currentPort, eventPort) {
   return currentPort === eventPort;
 }
 
+export function canEstablishDeveloperModePort(
+  currentPort, candidatePort, developerModeEnabled,
+) {
+  return developerModeEnabled === true
+    && isCurrentDeveloperModePort(currentPort, candidatePort);
+}
+
+export function canRevokeDeveloperModePort(currentPort, candidatePort) {
+  return isCurrentDeveloperModePort(currentPort, candidatePort);
+}
+
 export function createDeveloperModeStatus({
   enabled,
   extensionVersion,
