@@ -1,5 +1,7 @@
 import browser from '@/common/browser';
 import {
+  canEstablishDeveloperModePort,
+  canRevokeDeveloperModePort,
   createDeveloperModeStatus,
   isCurrentDeveloperModePort,
   shouldDisconnectDeveloperMode,
@@ -88,9 +90,15 @@ async function connect() {
   disconnect();
   const manifest = browser.runtime.getManifest();
   const request = createHandshakeRequest(manifest.version);
+  let connectingPort;
   try {
-    port = browser.runtime.connectNative(DEVELOPER_MODE_HOST);
-    const handshake = await waitForHandshake(port, request);
+    connectingPort = browser.runtime.connectNative(DEVELOPER_MODE_HOST);
+    port = connectingPort;
+    const handshake = await waitForHandshake(connectingPort, request);
+    if (!canEstablishDeveloperModePort(
+      port, connectingPort, getOption(kDeveloperMode))) {
+      throw new Error('Developer Mode native handshake generation was superseded.');
+    }
     negotiatedCapabilities = negotiateCapabilities(
       request.requestedCapabilities, handshake.capabilities);
     transport = {
@@ -101,14 +109,21 @@ async function connect() {
       sessionId: handshake.sessionId,
       error: null,
     };
-    const establishedPort = port;
-    establishedPort.onMessage.addListener(
-      message => onNativeMessage(establishedPort, message));
-    establishedPort.onDisconnect.addListener(
-      () => onDisconnect(establishedPort));
+    connectingPort.onMessage.addListener(
+      message => onNativeMessage(connectingPort, message));
+    connectingPort.onDisconnect.addListener(
+      () => onDisconnect(connectingPort));
     return getStatus();
   } catch (err) {
-    disconnect(String(err?.message || err));
+    if (!connectingPort || canRevokeDeveloperModePort(port, connectingPort)) {
+      disconnect(String(err?.message || err));
+    } else {
+      try {
+        connectingPort.disconnect();
+      } catch {
+        // A superseded generation may already be closed by its replacement.
+      }
+    }
     throw err;
   }
 }
@@ -129,7 +144,7 @@ function disconnect(error = null) {
 function onDisconnect(disconnectedPort) {
   // Port events may be delivered after a reconnect. A stale generation must
   // never revoke the newer session or its negotiated capability state.
-  if (!isCurrentDeveloperModePort(port, disconnectedPort)) return;
+  if (!canRevokeDeveloperModePort(port, disconnectedPort)) return;
   const error = browser.runtime.lastError?.message || 'Native host disconnected.';
   port = null;
   negotiatedCapabilities = [];
