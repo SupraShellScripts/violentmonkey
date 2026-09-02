@@ -188,7 +188,7 @@ test.each([
   ['missing owned script', v1Ledger(), null],
   ['repurposed identity', v1Ledger(), script(7, { name: 'Repurposed' })],
   ['soft-removed owned script', v1Ledger(), script(7, { removed: 1 })],
-  ['missing enabled state', v1Ledger(), script(7, { enabled: undefined })],
+  ['missing enabled state', v1Ledger(), script(7, { enabled: null })],
 ])('unsafe v1 migration fails closed without replacing the ledger: %s', async (
   label, oldLedger, ownedScript,
 ) => {
