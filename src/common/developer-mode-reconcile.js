@@ -82,7 +82,7 @@ function equalStringSets(left, right) {
   return left.every(item => rightSet.has(item));
 }
 
-function validateControlledRuntimeRequest(request) {
+export function validateControlledRuntimeRequest(request) {
   assertClosedObject(request, REQUEST_KEYS, REQUEST_KEYS, 'Controlled runtime request');
   if (request.schemaVersion !== 1 || request.operation !== CONTROLLED_RUNTIME_OPERATION) {
     throw new Error('Controlled runtime request protocol is incompatible.');
