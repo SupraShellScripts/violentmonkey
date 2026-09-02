@@ -2,6 +2,7 @@ export const DEVELOPER_MODE_HOST = 'io.github.suprashellscripts.violentmonkey_wo
 export const DEVELOPER_MODE_HANDSHAKE = 'developer-mode.handshake';
 export const DEVELOPER_MODE_PROTOCOL_VERSION = 1;
 export const CONTROLLED_RECONCILE_OPERATION = 'runtime.reconcile-controlled';
+export const DEVELOPMENT_STATE_OPERATION = 'runtime.reconcile-development-state';
 export const CONTROLLED_RUNTIME_OPERATION = 'runtime.execute-controlled';
 
 export function createHandshakeRequest(extensionVersion) {
@@ -12,6 +13,9 @@ export function createHandshakeRequest(extensionVersion) {
       name: 'violentmonkey',
       version: extensionVersion,
     },
+    // Lifecycle remains deliberately dormant until the browser-side state
+    // convergence implementation is qualified. Merely knowing the contract
+    // must not cause this extension to request new mutation authority.
     requestedCapabilities: [
       CONTROLLED_RECONCILE_OPERATION,
       CONTROLLED_RUNTIME_OPERATION,
@@ -21,9 +25,14 @@ export function createHandshakeRequest(extensionVersion) {
 
 export function negotiateCapabilities(requestedCapabilities, returnedCapabilities) {
   const requested = new Set(requestedCapabilities);
-  return returnedCapabilities.filter((item, index, all) => (
+  const negotiated = returnedCapabilities.filter((item, index, all) => (
     requested.has(item) && all.indexOf(item) === index
   ));
+  if (negotiated.includes(CONTROLLED_RECONCILE_OPERATION)
+  && negotiated.includes(DEVELOPMENT_STATE_OPERATION)) {
+    throw new Error('Legacy controlled reconcile and development-state lifecycle capabilities are mutually exclusive.');
+  }
+  return negotiated;
 }
 
 export function validateHandshakeResponse(message) {
