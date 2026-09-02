@@ -6,6 +6,10 @@ import {
   shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import {
+  ManagedArtifactOwnershipError,
+  reconcileManagedDevelopmentArtifact,
+} from '@/common/developer-mode-managed-artifacts';
+import {
   createControlledReconcileResult,
   CONTROLLED_RECONCILE_RESULT,
   validateControlledReconcileEnvelope,
@@ -23,6 +27,7 @@ import {
 import { kDeveloperMode } from '@/common/options-defaults';
 import { addOwnCommands, commands } from './init';
 import { getOption, hookOptions } from './options';
+import storage from './storage';
 
 const HANDSHAKE_TIMEOUT = 5000;
 let port;
@@ -169,12 +174,11 @@ async function onNativeMessage(nativePort, message) {
     assertCurrentReconcile(nativePort, message);
 
     phase = 'mutation';
-    const reconciled = await commands.ParseScript({
-      code: message.artifactCode,
+    const reconciled = await reconcileManagedDevelopmentArtifact({
+      message,
       meta: parsed.meta,
-      errors: null,
-      message: '',
-      bumpDate: false,
+      storageApi: storage.api,
+      commandApi: commands,
     });
     result = createControlledReconcileResult({
       message,
@@ -182,6 +186,7 @@ async function onNativeMessage(nativePort, message) {
       scriptId: reconciled?.where?.id ?? null,
     });
   } catch (err) {
+    if (err instanceof ManagedArtifactOwnershipError) phase = 'authorization';
     result = createBlockedReconcileResult(message, phase, err);
   }
   try {
