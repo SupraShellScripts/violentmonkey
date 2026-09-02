@@ -4,6 +4,7 @@ import {
   createHandshakeRequest,
   DEVELOPER_MODE_HANDSHAKE,
   DEVELOPER_MODE_HOST,
+  DEVELOPMENT_STATE_OPERATION,
   negotiateCapabilities,
   validateHandshakeResponse,
 } from '@/common/developer-mode-transport';
@@ -22,6 +23,8 @@ test('handshake request targets one fixed native host contract', () => {
       CONTROLLED_RUNTIME_OPERATION,
     ],
   });
+  expect(createHandshakeRequest('2.46.0').requestedCapabilities)
+  .not.toContain(DEVELOPMENT_STATE_OPERATION);
 });
 
 test('valid handshake establishes a copied capability session', () => {
@@ -55,6 +58,13 @@ test('capability negotiation cannot widen requested authority', () => {
     [CONTROLLED_RECONCILE_OPERATION],
     [CONTROLLED_RUNTIME_OPERATION],
   )).toEqual([]);
+});
+
+test('legacy and lifecycle mutation capabilities cannot co-negotiate', () => {
+  expect(() => negotiateCapabilities(
+    [CONTROLLED_RECONCILE_OPERATION, DEVELOPMENT_STATE_OPERATION],
+    [CONTROLLED_RECONCILE_OPERATION, DEVELOPMENT_STATE_OPERATION],
+  )).toThrow(/mutually exclusive/i);
 });
 
 test.each([
