@@ -64,7 +64,7 @@ function emptyLedger() {
   return { schemaVersion: WORKBENCH_MANAGED_ARTIFACTS_SCHEMA_VERSION, entries: [] };
 }
 
-function validateLedger(value) {
+export function validateManagedArtifactOwnershipLedgerV1(value) {
   if (value == null) return emptyLedger();
   assertExactKeys(value, ['schemaVersion', 'entries'], 'Managed artifact ledger');
   if (value.schemaVersion !== WORKBENCH_MANAGED_ARTIFACTS_SCHEMA_VERSION
@@ -87,7 +87,8 @@ function validateLedger(value) {
 
 async function readLedger(storageApi) {
   const stored = await storageApi.get([WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
-  return validateLedger(stored?.[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
+  return validateManagedArtifactOwnershipLedgerV1(
+    stored?.[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
 }
 
 async function writeLedger(storageApi, ledger) {
