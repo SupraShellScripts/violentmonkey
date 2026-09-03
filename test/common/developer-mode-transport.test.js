@@ -20,11 +20,10 @@ test('handshake request targets one fixed native host contract', () => {
     client: { name: 'violentmonkey', version: '2.46.0' },
     requestedCapabilities: [
       CONTROLLED_RECONCILE_OPERATION,
+      DEVELOPMENT_STATE_OPERATION,
       CONTROLLED_RUNTIME_OPERATION,
     ],
   });
-  expect(createHandshakeRequest('2.46.0').requestedCapabilities)
-  .not.toContain(DEVELOPMENT_STATE_OPERATION);
 });
 
 test('valid handshake establishes a copied capability session', () => {
@@ -46,12 +45,11 @@ test('valid handshake establishes a copied capability session', () => {
 
 test('capability negotiation cannot widen requested authority', () => {
   expect(negotiateCapabilities(
-    [CONTROLLED_RECONCILE_OPERATION, CONTROLLED_RUNTIME_OPERATION],
-    ['unrequested.operation', CONTROLLED_RECONCILE_OPERATION,
-      CONTROLLED_RECONCILE_OPERATION],
-  )).toEqual([CONTROLLED_RECONCILE_OPERATION]);
+    [CONTROLLED_RECONCILE_OPERATION, DEVELOPMENT_STATE_OPERATION, CONTROLLED_RUNTIME_OPERATION],
+    ['unrequested.operation', DEVELOPMENT_STATE_OPERATION, DEVELOPMENT_STATE_OPERATION],
+  )).toEqual([DEVELOPMENT_STATE_OPERATION]);
   expect(negotiateCapabilities(
-    [CONTROLLED_RECONCILE_OPERATION, CONTROLLED_RUNTIME_OPERATION],
+    [CONTROLLED_RECONCILE_OPERATION, DEVELOPMENT_STATE_OPERATION, CONTROLLED_RUNTIME_OPERATION],
     ['unrequested.operation'],
   )).toEqual([]);
   expect(negotiateCapabilities(
