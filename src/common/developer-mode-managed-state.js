@@ -100,6 +100,13 @@ function validateCommitted(committed) {
   return committed;
 }
 
+function isRevisionNeutralRepair(pending, committed) {
+  return pending.desiredState === committed.desiredState
+    && pending.artifactSha256 === committed.artifactSha256
+    && pending.fromRevision === committed.managedRevision
+    && pending.targetRevision === committed.managedRevision;
+}
+
 function validatePending(pending, committed) {
   assertExactKeys(pending, PENDING_KEYS, 'Managed lifecycle pending transition');
   assertString(pending.artifactSha256, 'Pending artifact SHA-256', HEX_64_RE);
@@ -110,8 +117,9 @@ function validatePending(pending, committed) {
   assertRevision(pending.targetRevision, 'Pending target revision');
 
   if (committed) {
-    if (pending.fromRevision !== committed.managedRevision
-    || pending.targetRevision !== committed.managedRevision + 1) {
+    const isTransition = pending.fromRevision === committed.managedRevision
+      && pending.targetRevision === committed.managedRevision + 1;
+    if (!isTransition && !isRevisionNeutralRepair(pending, committed)) {
       throw lifecycleError('Pending revision boundary does not follow committed state.');
     }
     if (pending.desiredState === 'absent'
@@ -337,8 +345,9 @@ export function planManagedDevelopmentTransition({ ledger, request, identity }) 
   }
 
   if (entry.pending) {
+    const repair = entry.committed && isRevisionNeutralRepair(entry.pending, entry.committed);
     if (!sameTarget(entry.pending, desiredState, artifactSha256)
-    || entry.pending.fromRevision !== expectedManagedRevision) {
+    || !repair && entry.pending.fromRevision !== expectedManagedRevision) {
       throw lifecycleError('A different managed lifecycle transition is already pending.');
     }
     return { kind: 'recover', entry: cloneEntry(entry), ledger: validated };
@@ -367,6 +376,34 @@ export function planManagedDevelopmentTransition({ ledger, request, identity }) 
   const nextLedger = validateManagedDevelopmentLifecycleLedger(
     replaceEntry(validated, nextEntry));
   return { kind: 'begin', entry: cloneEntry(nextEntry), ledger: nextLedger };
+}
+
+export function planManagedDevelopmentPhysicalRepair({ ledger, request, identity }) {
+  const validated = validateManagedDevelopmentLifecycleLedger(ledger);
+  validateIdentity(identity);
+  const {
+    artifactIdentity, artifactSha256, desiredState,
+  } = requestTransitionFields(request);
+  if (desiredState === 'absent') {
+    throw lifecycleError('Absent managed state does not require ownership recreation.');
+  }
+  const entry = validated.entries.find(item => item.artifactIdentity === artifactIdentity);
+  if (!entry || !sameEntryIdentity(entry, artifactIdentity, identity)
+  || !entry.committed || entry.pending
+  || entry.committed.desiredState !== desiredState
+  || entry.committed.artifactSha256 !== artifactSha256) {
+    throw lifecycleError('Managed lifecycle physical repair requires exact committed intent.');
+  }
+  const pending = {
+    artifactSha256,
+    desiredState,
+    fromRevision: entry.committed.managedRevision,
+    targetRevision: entry.committed.managedRevision,
+  };
+  const nextEntry = { ...entry, pending };
+  const nextLedger = validateManagedDevelopmentLifecycleLedger(
+    replaceEntry(validated, nextEntry));
+  return { kind: 'repair', entry: cloneEntry(nextEntry), ledger: nextLedger };
 }
 
 export function finalizeManagedDevelopmentTransition({
