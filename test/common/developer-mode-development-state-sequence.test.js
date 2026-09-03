@@ -54,7 +54,7 @@ function createCommands() {
     && (script.meta.namespace || '') === NAMESPACE;
   return {
     scripts,
-    async GetScript({ id, meta, removed }) {
+    async GetScript({ id, removed }) {
       if (id != null) return clone(scripts.get(id));
       return clone([...scripts.values()].find(script => sameIdentity(script)
         && Boolean(script.config.removed) === Boolean(removed)));
