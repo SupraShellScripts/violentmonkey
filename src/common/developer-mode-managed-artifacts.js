@@ -153,6 +153,7 @@ async function persistManaged(storageApi, ledger, request, identity, scriptId, d
 function parseSource(message, meta, scriptId) {
   return {
     ...scriptId && { id: scriptId },
+    ...!scriptId && { isNew: true },
     code: message.artifactCode,
     meta,
     errors: null,

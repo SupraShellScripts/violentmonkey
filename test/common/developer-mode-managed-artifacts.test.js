@@ -133,7 +133,9 @@ test('fresh install creates ownership and second reconcile keeps the same script
   expect(second.where.id).toBe(1);
   expect(commands.parseCalls).toHaveLength(2);
   expect(commands.parseCalls[0]).not.toHaveProperty('id');
+  expect(commands.parseCalls[0].isNew).toBe(true);
   expect(commands.parseCalls[1].id).toBe(1);
+  expect(commands.parseCalls[1]).not.toHaveProperty('isNew');
   expect(ledger(storage)).toEqual({
     schemaVersion: 1,
     entries: [{
@@ -234,6 +236,7 @@ test('ownership ledger stays separate from governed source and ParseScript paylo
   await reconcile(message, storage, commands);
   expect(commands.codes.get(1)).toBe(message.artifactCode);
   expect(commands.parseCalls[0]).toEqual({
+    isNew: true,
     code: message.artifactCode,
     meta: META,
     errors: null,
