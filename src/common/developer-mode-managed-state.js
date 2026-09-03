@@ -3,7 +3,6 @@ import {
   ManagedArtifactOwnershipError,
   readManagedArtifactStorageLedger,
   validateManagedArtifactOwnershipLedgerV1,
-  WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY,
   writeManagedArtifactStorageLedger,
 } from './developer-mode-managed-artifacts';
 
