@@ -1,4 +1,5 @@
 import {
+  activateManagedDevelopmentLifecycle,
   finalizeManagedDevelopmentTransition,
   persistManagedDevelopmentLifecycleLedger,
   planManagedDevelopmentTransition,
@@ -6,7 +7,11 @@ import {
   WORKBENCH_MANAGED_STATE_MODE,
   WORKBENCH_MANAGED_STATE_SCHEMA_VERSION,
 } from '@/common/developer-mode-managed-state';
-import { WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY } from '@/common/developer-mode-managed-artifacts';
+import {
+  ManagedArtifactOwnershipError,
+  reconcileManagedDevelopmentArtifact,
+  WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY,
+} from '@/common/developer-mode-managed-artifacts';
 
 const NAME = 'Controlled Fixture';
 const NAMESPACE = 'https://suprashellscripts.github/workbench';
@@ -35,6 +40,20 @@ function committedLedger({
         managedRevision: revision,
       },
       pending: null,
+    }],
+  };
+}
+
+function v1Ledger() {
+  return {
+    schemaVersion: 1,
+    entries: [{
+      state: 'managed',
+      artifactIdentity: ARTIFACT_IDENTITY,
+      name: NAME,
+      namespace: NAMESPACE,
+      artifactSha256: DIGEST,
+      scriptId: 7,
     }],
   };
 }
@@ -137,4 +156,46 @@ it('does not advance the session ledger when the durable write fails', async () 
   expect(observed).toEqual(initial);
   expect(observed.entries[0].pending).toBeNull();
   expect(observed.entries[0].committed.managedRevision).toBe(2);
+});
+
+it('keeps the schema-v2 downgrade fence monotonic against a stale schema-v1 read', async () => {
+  const legacy = v1Ledger();
+  const storage = createStorage(legacy);
+  const ownedScript = {
+    meta: { name: NAME, namespace: NAMESPACE },
+    config: { enabled: 1, removed: 0 },
+    props: { id: 7 },
+  };
+  const lifecycle = await activateManagedDevelopmentLifecycle({
+    storageApi: storage,
+    commandApi: {
+      async GetScript({ id }) { return id === 7 ? clone(ownedScript) : null; },
+    },
+  });
+  expect(lifecycle.schemaVersion).toBe(2);
+  expect(storage.getCount).toBe(1);
+
+  // The raw backend now lies with the pre-activation schema-v1 value. Legacy
+  // mutation must still see the already-authoritative schema-v2 fence.
+  storage.staleRead = legacy;
+  let parseCalls = 0;
+  const legacyMessage = {
+    request: { artifact: { identity: ARTIFACT_IDENTITY, sha256: DIGEST } },
+    artifactCode: '/* governed */',
+  };
+  await expect(reconcileManagedDevelopmentArtifact({
+    message: legacyMessage,
+    meta: IDENTITY,
+    storageApi: storage,
+    commandApi: {
+      async GetScript({ id }) { return id === 7 ? clone(ownedScript) : null; },
+      async GetScriptCode() { return '/* governed */'; },
+      async ParseScript() {
+        parseCalls += 1;
+        return { where: { id: 7 } };
+      },
+    },
+  })).rejects.toBeInstanceOf(ManagedArtifactOwnershipError);
+  expect(storage.getCount).toBe(1);
+  expect(parseCalls).toBe(0);
 });
