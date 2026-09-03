@@ -13,11 +13,12 @@ export function createHandshakeRequest(extensionVersion) {
       name: 'violentmonkey',
       version: extensionVersion,
     },
-    // Lifecycle remains deliberately dormant until the browser-side state
-    // convergence implementation is qualified. Merely knowing the contract
-    // must not cause this extension to request new mutation authority.
+    // Request both mutation generations so a host can select exactly one.
+    // Negotiation rejects co-advertisement; runtime.execute-controlled remains
+    // requested only as a negative capability boundary and is not implemented.
     requestedCapabilities: [
       CONTROLLED_RECONCILE_OPERATION,
+      DEVELOPMENT_STATE_OPERATION,
       CONTROLLED_RUNTIME_OPERATION,
     ],
   };
