@@ -6,9 +6,21 @@ import {
   shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import {
+  createDevelopmentStateResult,
+  DEVELOPMENT_STATE_RESULT,
+  validateDevelopmentStateEnvelope,
+  verifyDevelopmentStateArtifact,
+} from '@/common/developer-mode-development-state';
+import {
+  reconcileManagedDevelopmentState,
+} from '@/common/developer-mode-development-state-convergence';
+import {
   ManagedArtifactOwnershipError,
   reconcileManagedDevelopmentArtifact,
 } from '@/common/developer-mode-managed-artifacts';
+import {
+  activateManagedDevelopmentLifecycle,
+} from '@/common/developer-mode-managed-state';
 import {
   createControlledReconcileResult,
   CONTROLLED_RECONCILE_RESULT,
@@ -21,6 +33,7 @@ import {
   createHandshakeRequest,
   DEVELOPER_MODE_HOST,
   DEVELOPER_MODE_PROTOCOL_VERSION,
+  DEVELOPMENT_STATE_OPERATION,
   negotiateCapabilities,
   validateHandshakeResponse,
 } from '@/common/developer-mode-transport';
@@ -31,6 +44,7 @@ import storage from './storage';
 
 const HANDSHAKE_TIMEOUT = 5000;
 let port;
+let lifecycleActivation;
 let negotiatedCapabilities = [];
 let transport = disconnectedTransport();
 
@@ -69,7 +83,7 @@ function getStatus() {
   });
 }
 
-function getReconcileContext() {
+function getMutationContext() {
   return {
     sessionId: transport.sessionId,
     runtimeId: browser.runtime.id,
@@ -83,14 +97,24 @@ function assertCurrentReconcile(nativePort, message) {
   if (nativePort !== port) {
     throw new Error('Controlled reconcile native session is no longer current.');
   }
-  return validateControlledReconcileEnvelope(message, getReconcileContext());
+  return validateControlledReconcileEnvelope(message, getMutationContext());
+}
+
+function assertCurrentDevelopmentState(nativePort, message) {
+  if (nativePort !== port) {
+    throw new Error('Development-state native session is no longer current.');
+  }
+  return validateDevelopmentStateEnvelope(message, getMutationContext());
 }
 
 async function connect() {
   if (getOption(kDeveloperMode) !== true) {
     throw new Error('Developer Mode must be explicitly enabled before connecting.');
   }
-  if (transport.connected) return getStatus();
+  if (transport.connected) {
+    if (lifecycleActivation) await lifecycleActivation;
+    return getStatus();
+  }
   disconnect();
   const manifest = browser.runtime.getManifest();
   const request = createHandshakeRequest(manifest.version);
@@ -117,6 +141,20 @@ async function connect() {
       message => onNativeMessage(connectingPort, message));
     connectingPort.onDisconnect.addListener(
       () => onDisconnect(connectingPort));
+
+    if (negotiatedCapabilities.includes(DEVELOPMENT_STATE_OPERATION)) {
+      // Negotiating lifecycle mode is the explicit profile activation point.
+      // Migrate/fence the profile before any lifecycle request may converge.
+      lifecycleActivation = activateManagedDevelopmentLifecycle({
+        storageApi: storage.api,
+        commandApi: commands,
+      });
+      await lifecycleActivation;
+      if (!canEstablishDeveloperModePort(
+        port, connectingPort, getOption(kDeveloperMode))) {
+        throw new Error('Developer Mode lifecycle activation was superseded.');
+      }
+    }
     return getStatus();
   } catch (err) {
     if (!connectingPort || canRevokeDeveloperModePort(port, connectingPort)) {
@@ -135,6 +173,7 @@ async function connect() {
 function disconnect(error = null) {
   const oldPort = port;
   port = null;
+  lifecycleActivation = null;
   negotiatedCapabilities = [];
   transport = disconnectedTransport(error);
   try {
@@ -151,12 +190,20 @@ function onDisconnect(disconnectedPort) {
   if (!canRevokeDeveloperModePort(port, disconnectedPort)) return;
   const error = browser.runtime.lastError?.message || 'Native host disconnected.';
   port = null;
+  lifecycleActivation = null;
   negotiatedCapabilities = [];
   transport = disconnectedTransport(error);
 }
 
 async function onNativeMessage(nativePort, message) {
-  if (message?.operation !== CONTROLLED_RECONCILE_OPERATION) return;
+  if (message?.operation === CONTROLLED_RECONCILE_OPERATION) {
+    await onControlledReconcileMessage(nativePort, message);
+  } else if (message?.operation === DEVELOPMENT_STATE_OPERATION) {
+    await onDevelopmentStateMessage(nativePort, message);
+  }
+}
+
+async function onControlledReconcileMessage(nativePort, message) {
   let phase = 'authorization';
   let result;
   try {
@@ -189,11 +236,51 @@ async function onNativeMessage(nativePort, message) {
     if (err instanceof ManagedArtifactOwnershipError) phase = 'authorization';
     result = createBlockedReconcileResult(message, phase, err);
   }
+  postNativeResult(nativePort, result);
+}
+
+async function onDevelopmentStateMessage(nativePort, message) {
+  let phase = 'authorization';
+  let result;
+  try {
+    if (lifecycleActivation) await lifecycleActivation;
+    assertCurrentDevelopmentState(nativePort, message);
+    await verifyDevelopmentStateArtifact(message);
+    assertCurrentDevelopmentState(nativePort, message);
+
+    const parsed = commands.ParseMeta?.(message.artifactCode);
+    if (!parsed?.meta || parsed.errors?.length) {
+      throw new Error('Development-state userscript metadata failed Violentmonkey validation.');
+    }
+    validateControlledUserscriptMetadata(parsed.meta, message.request);
+    assertCurrentDevelopmentState(nativePort, message);
+
+    phase = 'mutation';
+    const converged = await reconcileManagedDevelopmentState({
+      message,
+      meta: parsed.meta,
+      storageApi: storage.api,
+      commandApi: commands,
+    });
+    result = createDevelopmentStateResult({
+      message,
+      status: 'converged',
+      managedRevision: converged.managedRevision,
+      scriptId: converged.scriptId,
+    });
+  } catch (err) {
+    if (err instanceof ManagedArtifactOwnershipError) phase = 'authorization';
+    result = createBlockedDevelopmentStateResult(message, phase, err);
+  }
+  postNativeResult(nativePort, result);
+}
+
+function postNativeResult(nativePort, result) {
   try {
     nativePort.postMessage(result);
   } catch {
-    // A disconnect revokes the transport. A later idempotent reconcile can
-    // establish authoritative state if an in-flight DB transaction completed.
+    // Disconnect revokes transport. A later idempotent request can establish
+    // authoritative state if an already-authorized DB mutation completed.
   }
 }
 
@@ -213,6 +300,33 @@ function createBlockedReconcileResult(message, phase, err) {
       sessionId: typeof message?.sessionId === 'string' ? message.sessionId : null,
       status: 'blocked',
       artifact: null,
+      scriptId: null,
+      browserExecution: false,
+      postconditionObserved: false,
+      error: err ? 'request-blocked' : null,
+    };
+  }
+}
+
+function createBlockedDevelopmentStateResult(message, phase, err) {
+  try {
+    return createDevelopmentStateResult({
+      message,
+      status: phase === 'mutation' ? 'error' : 'blocked',
+      error: phase === 'mutation' ? 'reconcile-failed' : 'request-blocked',
+    });
+  } catch {
+    return {
+      schemaVersion: DEVELOPER_MODE_PROTOCOL_VERSION,
+      operation: DEVELOPMENT_STATE_RESULT,
+      correlationId: typeof message?.request?.correlationId === 'string'
+        ? message.request.correlationId : null,
+      sessionId: typeof message?.sessionId === 'string' ? message.sessionId : null,
+      status: 'blocked',
+      artifact: null,
+      desiredState: typeof message?.request?.desiredState === 'string'
+        ? message.request.desiredState : null,
+      managedRevision: null,
       scriptId: null,
       browserExecution: false,
       postconditionObserved: false,
