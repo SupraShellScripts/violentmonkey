@@ -7,6 +7,7 @@ const HEX_64_RE = /^[0-9a-f]{64}$/;
 const ENTRY_KEYS = [
   'state', 'artifactIdentity', 'name', 'namespace', 'artifactSha256', 'scriptId',
 ];
+const managedLedgerByStorage = new WeakMap();
 
 export class ManagedArtifactOwnershipError extends Error {}
 
@@ -85,14 +86,41 @@ export function validateManagedArtifactOwnershipLedgerV1(value) {
   };
 }
 
-async function readLedger(storageApi) {
+function validateStorageApi(storageApi) {
+  if (!storageApi?.get || !storageApi?.set) {
+    throw new Error('Managed artifact persistence adapter is unavailable.');
+  }
+}
+
+export async function readManagedArtifactStorageLedger(storageApi) {
+  validateStorageApi(storageApi);
+  if (managedLedgerByStorage.has(storageApi)) {
+    return managedLedgerByStorage.get(storageApi);
+  }
   const stored = await storageApi.get([WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
+  const ledger = stored?.[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY] ?? null;
+  managedLedgerByStorage.set(storageApi, ledger);
+  return ledger;
+}
+
+export async function writeManagedArtifactStorageLedger(storageApi, ledger) {
+  validateStorageApi(storageApi);
+  await storageApi.set({ [WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]: ledger });
+  // Keep the authoritative managed ledger monotonic within this background
+  // session. Firefox has been observed returning an older storage.local value
+  // after a successful set and onChanged delivery. The existing mutation
+  // queues serialize sanctioned writers; a background restart drops this
+  // shadow and re-seeds it from durable storage for crash recovery.
+  managedLedgerByStorage.set(storageApi, ledger);
+}
+
+async function readLedger(storageApi) {
   return validateManagedArtifactOwnershipLedgerV1(
-    stored?.[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
+    await readManagedArtifactStorageLedger(storageApi));
 }
 
 async function writeLedger(storageApi, ledger) {
-  await storageApi.set({ [WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]: ledger });
+  await writeManagedArtifactStorageLedger(storageApi, ledger);
 }
 
 function replaceEntry(ledger, entry) {
