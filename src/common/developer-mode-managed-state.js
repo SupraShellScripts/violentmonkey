@@ -1,8 +1,10 @@
 import { DEVELOPMENT_STATES } from './developer-mode-development-state';
 import {
   ManagedArtifactOwnershipError,
+  readManagedArtifactStorageLedger,
   validateManagedArtifactOwnershipLedgerV1,
   WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY,
+  writeManagedArtifactStorageLedger,
 } from './developer-mode-managed-artifacts';
 
 export const WORKBENCH_MANAGED_STATE_SCHEMA_VERSION = 2;
@@ -13,7 +15,6 @@ const LEDGER_KEYS = ['schemaVersion', 'mode', 'entries'];
 const ENTRY_KEYS = ['artifactIdentity', 'name', 'namespace', 'committed', 'pending'];
 const COMMITTED_KEYS = ['artifactSha256', 'scriptId', 'desiredState', 'managedRevision'];
 const PENDING_KEYS = ['artifactSha256', 'desiredState', 'fromRevision', 'targetRevision'];
-const lifecycleLedgerByStorage = new WeakMap();
 
 export class ManagedArtifactLifecycleError extends ManagedArtifactOwnershipError {}
 
@@ -185,46 +186,24 @@ function validateStorageApi(storageApi) {
   }
 }
 
-function rememberLifecycleLedger(storageApi, ledger) {
-  const validated = validateManagedDevelopmentLifecycleLedger(ledger);
-  lifecycleLedgerByStorage.set(storageApi, validated);
-  return cloneLedger(validated);
-}
-
-function readRememberedLifecycleLedger(storageApi) {
-  const remembered = lifecycleLedgerByStorage.get(storageApi);
-  return remembered && cloneLedger(remembered);
-}
-
 async function readRawLedger(storageApi) {
   validateStorageApi(storageApi);
-  const stored = await storageApi.get([WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
-  return stored?.[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY] ?? null;
+  return readManagedArtifactStorageLedger(storageApi);
 }
 
 export async function readManagedDevelopmentLifecycleLedger(storageApi) {
-  validateStorageApi(storageApi);
-  const remembered = readRememberedLifecycleLedger(storageApi);
-  if (remembered) return remembered;
-
   const value = await readRawLedger(storageApi);
   if (value == null || value.schemaVersion !== WORKBENCH_MANAGED_STATE_SCHEMA_VERSION) {
     throw lifecycleError('Managed lifecycle mode is not active for this browser profile.');
   }
-  return rememberLifecycleLedger(storageApi, value);
+  return validateManagedDevelopmentLifecycleLedger(value);
 }
 
 export async function persistManagedDevelopmentLifecycleLedger(storageApi, ledger) {
   validateStorageApi(storageApi);
   const validated = validateManagedDevelopmentLifecycleLedger(ledger);
-  await storageApi.set({
-    [WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]: validated,
-  });
-  // Firefox has been observed returning an older storage.local value after a
-  // successful set and onChanged delivery. Once this background session has
-  // durably written a validated lifecycle ledger, never regress its authority
-  // to an older raw read. A restarted background naturally re-seeds from disk.
-  return rememberLifecycleLedger(storageApi, validated);
+  await writeManagedArtifactStorageLedger(storageApi, validated);
+  return validated;
 }
 
 function sameScriptIdentity(script, entry) {
@@ -251,12 +230,9 @@ export async function activateManagedDevelopmentLifecycle({ storageApi, commandA
     throw new Error('Managed lifecycle command adapter is unavailable.');
   }
 
-  const remembered = readRememberedLifecycleLedger(storageApi);
-  if (remembered) return remembered;
-
   const raw = await readRawLedger(storageApi);
   if (raw?.schemaVersion === WORKBENCH_MANAGED_STATE_SCHEMA_VERSION) {
-    return rememberLifecycleLedger(storageApi, raw);
+    return validateManagedDevelopmentLifecycleLedger(raw);
   }
 
   const v1 = validateManagedArtifactOwnershipLedgerV1(raw);
@@ -288,10 +264,8 @@ export async function activateManagedDevelopmentLifecycle({ storageApi, commandA
     ...emptyLifecycleLedger(),
     entries,
   });
-  await storageApi.set({
-    [WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]: lifecycle,
-  });
-  return rememberLifecycleLedger(storageApi, lifecycle);
+  await writeManagedArtifactStorageLedger(storageApi, lifecycle);
+  return lifecycle;
 }
 
 function requestTransitionFields(request) {
