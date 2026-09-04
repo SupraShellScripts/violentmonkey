@@ -29,6 +29,10 @@
         Mutation mode:
         <code>{{ mutationMode(status) }}</code>
       </span>
+      <span>
+        Read-only inspection:
+        <code>{{ inspectionAvailability(status) }}</code>
+      </span>
       <span class="error" v-if="error || status.transport.error">
         {{ error || status.transport.error }}
       </span>
@@ -54,6 +58,10 @@ function mutationMode(value) {
   if (value?.developmentState?.available) return 'lifecycle';
   if (value?.controlledReconcile?.available) return 'reconcile';
   return 'unavailable';
+}
+
+function inspectionAvailability(value) {
+  return value?.developmentStateInspection?.available ? 'available' : 'unavailable';
 }
 
 async function refresh() {
