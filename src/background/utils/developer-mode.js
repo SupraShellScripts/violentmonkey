@@ -407,7 +407,7 @@ function createBlockedDevelopmentStateInspectionResult(message, phase, err) {
 function waitForHandshake(nativePort, request) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => finish(
-      reject, new Error('Developer Mode native handshake timed out.')), HANDSHAKE_TIMEOUT);
+      reject, new Error('Native host handshake timed out.')), HANDSHAKE_TIMEOUT);
     const onMessage = message => {
       try {
         finish(resolve, validateHandshakeResponse(message));
