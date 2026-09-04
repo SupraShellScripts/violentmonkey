@@ -26,8 +26,8 @@
         <code>{{ status.transport.sessionId }}</code>
       </span>
       <span>
-        {{ i18n('labelDeveloperModeRuntime') }}
-        <code>{{ status.controlledRuntime.available ? 'available' : 'blocked' }}</code>
+        Mutation mode:
+        <code>{{ mutationMode(status) }}</code>
       </span>
       <span class="error" v-if="error || status.transport.error">
         {{ error || status.transport.error }}
@@ -49,6 +49,12 @@ const error = ref('');
 const status = ref();
 
 onMounted(refresh);
+
+function mutationMode(value) {
+  if (value?.developmentState?.available) return 'lifecycle';
+  if (value?.controlledReconcile?.available) return 'reconcile';
+  return 'unavailable';
+}
 
 async function refresh() {
   return run('GetDeveloperModeStatus');

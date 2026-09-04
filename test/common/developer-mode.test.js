@@ -10,6 +10,7 @@ import {
 import {
   CONTROLLED_RECONCILE_OPERATION,
   CONTROLLED_RUNTIME_OPERATION,
+  DEVELOPMENT_STATE_OPERATION,
 } from '@/common/developer-mode-transport';
 
 const buildStatus = (enabled, extra = {}) => createDeveloperModeStatus({
@@ -25,6 +26,7 @@ test('Developer Mode is fail-closed unless explicitly enabled', () => {
       transport: { kind: 'native-messaging', connected: true },
       negotiatedCapabilities: [
         CONTROLLED_RECONCILE_OPERATION,
+        DEVELOPMENT_STATE_OPERATION,
         CONTROLLED_RUNTIME_OPERATION,
       ],
     });
@@ -34,6 +36,10 @@ test('Developer Mode is fail-closed unless explicitly enabled', () => {
       connected: false,
     });
     expect(status.controlledReconcile).toMatchObject({
+      available: false,
+      negotiated: false,
+    });
+    expect(status.developmentState).toMatchObject({
       available: false,
       negotiated: false,
     });
@@ -76,7 +82,45 @@ test('stale handshake generations cannot establish or revoke newer state', () =>
   expect(canRevokeDeveloperModePort(null, null)).toBe(false);
 });
 
-test('reconcile can be available while full execution remains unavailable', () => {
+test('development-state lifecycle can be available while execution remains unavailable', () => {
+  const transport = {
+    kind: 'native-messaging',
+    connected: true,
+    host: 'io.github.suprashellscripts.violentmonkey_workbench',
+    sessionId: 'ephemeral-session',
+  };
+  const status = buildStatus(true, {
+    transport,
+    negotiatedCapabilities: [DEVELOPMENT_STATE_OPERATION],
+  });
+  expect(status).toMatchObject({
+    schemaVersion: DEVELOPER_MODE_PROTOCOL_VERSION,
+    operation: DEVELOPER_MODE_STATUS_OPERATION,
+    enabled: true,
+    extensionVersion: '2.46.0',
+    manifestVersion: 3,
+    capabilities: ['status', 'native-handshake'],
+    transport,
+    controlledReconcile: {
+      available: false,
+      negotiated: false,
+      operation: CONTROLLED_RECONCILE_OPERATION,
+    },
+    developmentState: {
+      available: true,
+      negotiated: true,
+      operation: DEVELOPMENT_STATE_OPERATION,
+    },
+    controlledRuntime: {
+      available: false,
+      negotiated: false,
+      operation: CONTROLLED_RUNTIME_OPERATION,
+    },
+  });
+  expect(status.limitation).toMatch(/lifecycle.*execution.*remain unavailable/i);
+});
+
+test('reconcile can be available while lifecycle and full execution remain unavailable', () => {
   const transport = {
     kind: 'native-messaging',
     connected: true,
@@ -100,6 +144,11 @@ test('reconcile can be available while full execution remains unavailable', () =
       negotiated: true,
       operation: CONTROLLED_RECONCILE_OPERATION,
     },
+    developmentState: {
+      available: false,
+      negotiated: false,
+      operation: DEVELOPMENT_STATE_OPERATION,
+    },
     controlledRuntime: {
       available: false,
       negotiated: false,
@@ -115,6 +164,7 @@ test('negotiated execute capability still does not make full runtime available',
     negotiatedCapabilities: [CONTROLLED_RUNTIME_OPERATION],
   });
   expect(status.controlledReconcile.available).toBe(false);
+  expect(status.developmentState.available).toBe(false);
   expect(status.controlledRuntime).toEqual({
     available: false,
     negotiated: true,
