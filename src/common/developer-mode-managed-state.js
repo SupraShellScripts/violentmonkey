@@ -1,8 +1,9 @@
 import { DEVELOPMENT_STATES } from './developer-mode-development-state';
 import {
   ManagedArtifactOwnershipError,
+  readManagedArtifactStorageLedger,
   validateManagedArtifactOwnershipLedgerV1,
-  WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY,
+  writeManagedArtifactStorageLedger,
 } from './developer-mode-managed-artifacts';
 
 export const WORKBENCH_MANAGED_STATE_SCHEMA_VERSION = 2;
@@ -186,8 +187,7 @@ function validateStorageApi(storageApi) {
 
 async function readRawLedger(storageApi) {
   validateStorageApi(storageApi);
-  const stored = await storageApi.get([WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
-  return stored?.[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY] ?? null;
+  return readManagedArtifactStorageLedger(storageApi);
 }
 
 export async function readManagedDevelopmentLifecycleLedger(storageApi) {
@@ -201,9 +201,7 @@ export async function readManagedDevelopmentLifecycleLedger(storageApi) {
 export async function persistManagedDevelopmentLifecycleLedger(storageApi, ledger) {
   validateStorageApi(storageApi);
   const validated = validateManagedDevelopmentLifecycleLedger(ledger);
-  await storageApi.set({
-    [WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]: validated,
-  });
+  await writeManagedArtifactStorageLedger(storageApi, validated);
   return validated;
 }
 
@@ -265,9 +263,7 @@ export async function activateManagedDevelopmentLifecycle({ storageApi, commandA
     ...emptyLifecycleLedger(),
     entries,
   });
-  await storageApi.set({
-    [WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]: lifecycle,
-  });
+  await writeManagedArtifactStorageLedger(storageApi, lifecycle);
   return lifecycle;
 }
 
