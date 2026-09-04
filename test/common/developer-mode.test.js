@@ -11,6 +11,7 @@ import {
   CONTROLLED_RECONCILE_OPERATION,
   CONTROLLED_RUNTIME_OPERATION,
   DEVELOPMENT_STATE_OPERATION,
+  INSPECT_DEVELOPMENT_STATE_OPERATION,
 } from '@/common/developer-mode-transport';
 
 const buildStatus = (enabled, extra = {}) => createDeveloperModeStatus({
@@ -27,6 +28,7 @@ test('Developer Mode is fail-closed unless explicitly enabled', () => {
       negotiatedCapabilities: [
         CONTROLLED_RECONCILE_OPERATION,
         DEVELOPMENT_STATE_OPERATION,
+        INSPECT_DEVELOPMENT_STATE_OPERATION,
         CONTROLLED_RUNTIME_OPERATION,
       ],
     });
@@ -40,6 +42,10 @@ test('Developer Mode is fail-closed unless explicitly enabled', () => {
       negotiated: false,
     });
     expect(status.developmentState).toMatchObject({
+      available: false,
+      negotiated: false,
+    });
+    expect(status.developmentStateInspection).toMatchObject({
       available: false,
       negotiated: false,
     });
@@ -111,6 +117,11 @@ test('development-state lifecycle can be available while execution remains unava
       negotiated: true,
       operation: DEVELOPMENT_STATE_OPERATION,
     },
+    developmentStateInspection: {
+      available: false,
+      negotiated: false,
+      operation: INSPECT_DEVELOPMENT_STATE_OPERATION,
+    },
     controlledRuntime: {
       available: false,
       negotiated: false,
@@ -118,6 +129,28 @@ test('development-state lifecycle can be available while execution remains unava
     },
   });
   expect(status.limitation).toMatch(/lifecycle.*execution.*remain unavailable/i);
+});
+
+test('read-only lifecycle inspection can be available without mutation authority', () => {
+  const transport = {
+    kind: 'native-messaging',
+    connected: true,
+    host: 'io.github.suprashellscripts.violentmonkey_workbench',
+    sessionId: 'ephemeral-session',
+  };
+  const status = buildStatus(true, {
+    transport,
+    negotiatedCapabilities: [INSPECT_DEVELOPMENT_STATE_OPERATION],
+  });
+  expect(status.controlledReconcile.available).toBe(false);
+  expect(status.developmentState.available).toBe(false);
+  expect(status.developmentStateInspection).toEqual({
+    available: true,
+    negotiated: true,
+    operation: INSPECT_DEVELOPMENT_STATE_OPERATION,
+  });
+  expect(status.controlledRuntime.available).toBe(false);
+  expect(status.limitation).toMatch(/read-only.*mutation.*unavailable/i);
 });
 
 test('reconcile can be available while lifecycle and full execution remain unavailable', () => {
@@ -149,6 +182,11 @@ test('reconcile can be available while lifecycle and full execution remain unava
       negotiated: false,
       operation: DEVELOPMENT_STATE_OPERATION,
     },
+    developmentStateInspection: {
+      available: false,
+      negotiated: false,
+      operation: INSPECT_DEVELOPMENT_STATE_OPERATION,
+    },
     controlledRuntime: {
       available: false,
       negotiated: false,
@@ -165,6 +203,7 @@ test('negotiated execute capability still does not make full runtime available',
   });
   expect(status.controlledReconcile.available).toBe(false);
   expect(status.developmentState.available).toBe(false);
+  expect(status.developmentStateInspection.available).toBe(false);
   expect(status.controlledRuntime).toEqual({
     available: false,
     negotiated: true,
