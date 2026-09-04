@@ -17,7 +17,7 @@ import {
 } from './script';
 import { testBlacklist, testerBatch, testScript } from './tester';
 import { getImageData } from './icon';
-import { addOwnCommands, addPublicCommands, commands, resolveInit } from './init';
+import { addOwnCommands, addPublicCommands, commands, init, resolveInit } from './init';
 import { installedOver, NEW_INSTALL } from './on-installed';
 import patchDB from './patch-db';
 import { permissionDownloads } from './permissions';
@@ -209,8 +209,8 @@ export async function initializeDatabase(reset) {
     }
     vacuum(data); // also calculates `scriptSizes`
     checkRemove();
-    sortScripts();
   }
+  sortScripts();
   if (!__.MV3) {
     setInterval(checkRemove, TIMEOUT_24HOURS);
   }
@@ -258,7 +258,7 @@ function normalizePosition(positions) {
 export async function sortScripts() {
   aliveScripts.sort((a, b) => (a.props.position || 0) - (b.props.position || 0));
   const positions = {};
-  if (normalizePosition(positions)) {
+  if (normalizePosition(positions) && !init) {
     broadcast('ScriptsSorted', positions);
     return true;
   }

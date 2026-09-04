@@ -73,8 +73,8 @@ import 'codemirror/addon/hint/show-hint.css';
 import 'codemirror/addon/hint/show-hint';
 import 'codemirror/addon/hint/javascript-hint';
 import 'codemirror/addon/hint/anyword-hint';
-import { debounce, escapeStringForRegExp, getUniqId, i18n, sendCmdDirectly } from '@/common';
-import { GM4_ALIAS, GM_API_NAMES } from '@/common/consts';
+import { debounce, getUniqId, i18n, sendCmdDirectly } from '@/common';
+import { ESC_STR_RE, GM4_ALIAS, GM_API_NAMES } from '@/common/consts';
 import hookSetting from '@/common/hook-setting';
 import { deepEqual, forEachEntry, objectPick } from '@/common/object';
 import options from '@/common/options';
@@ -389,7 +389,7 @@ function doSearchInternal({ reversed, wrapAround, pos } = {}) {
     if (queryChanged || gen !== search.prevGen) {
       search.prevGen = gen;
       search.num = getRealContent().normalize('NFD').match(
-        useRegex ? query : RegExp(escapeStringForRegExp(query.normalize('NFD')), (caseSensitive ? '' : 'i') + 'gu')
+        useRegex ? query : RegExp(query.normalize('NFD').replace(ESC_STR_RE, '\\$&'), (caseSensitive ? '' : 'i') + 'gu')
       )?.length || 0;
     }
     if (cur.find(reversed)) {

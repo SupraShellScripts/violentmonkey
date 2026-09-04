@@ -179,7 +179,7 @@ let dlApiInput;
 onActivated(() => {
   focusMe($el.value);
   revokers = [
-    keyboardService.register('ctrlcmd-s', ctrlS, { condition: kbdTypable }),
+    keyboardService.register('ctrlcmd-KeyS', ctrlS, { condition: kbdTypable }),
     ...hookSettingsForUI(items, settings, watch, 50),
   ];
   expose.value = Object.keys(options.get(EXPOSE)).map(k => [k, decodeURIComponent(k)]);

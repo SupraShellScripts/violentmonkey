@@ -7,6 +7,8 @@ settings:
 overrides:
   braces@<3.0.3: ^3.0.3
   micromatch@<4.0.8: ^4.0.8
+  nanoid@<3.3.18: ^3.3.18
+  nanoid@>=4.0.0 <5.1.16: ^5.1.16
   postcss@<7.0.36: ^7.0.36
   postcss@<8.4.31: ^8.4.31
   postcss@<8.5.10: ^8.5.10
@@ -4246,13 +4248,13 @@ packages:
     resolution: {integrity: sha512-32GSKM3Wyc8dg/p39lWPKYu8zci9mJFzV1Np9Of0ZEpe6Fhssn/FbI7ywAMd40uX+p3ZKh3T5EeCFv81qS3HmQ==}
     engines: {node: '>= 10.13.0'}
 
-  nanoid@3.3.17:
-    resolution: {integrity: sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==}
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
-  nanoid@5.1.11:
-    resolution: {integrity: sha512-v+KEsUv2ps74PaSKv0gHTxTCgMXOIfBEbaqa6w6ISIGC7ZsvHN4N9oJ8d4cmf0n5oTzQz2SLmThbQWhjd/8eKg==}
+  nanoid@5.1.16:
+    resolution: {integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==}
     engines: {node: ^18 || >=20}
     hasBin: true
 
@@ -8046,7 +8048,7 @@ snapshots:
 
   '@usync/oauth2@0.1.7':
     dependencies:
-      nanoid: 5.1.11
+      nanoid: 5.1.16
 
   '@usync/sync@0.1.1': {}
 
@@ -10495,9 +10497,9 @@ snapshots:
 
   mute-stdout@2.0.0: {}
 
-  nanoid@3.3.17: {}
+  nanoid@3.3.18: {}
 
-  nanoid@5.1.11: {}
+  nanoid@5.1.16: {}
 
   napi-postinstall@0.3.4: {}
 
@@ -11213,7 +11215,7 @@ snapshots:
 
   postcss@8.5.26:
     dependencies:
-      nanoid: 3.3.17
+      nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
