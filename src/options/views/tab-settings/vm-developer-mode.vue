@@ -26,7 +26,7 @@
         <code>{{ status.transport.sessionId }}</code>
       </span>
       <span>
-        {{ i18n('labelDeveloperModeRuntime') }}
+        Mutation mode:
         <code>{{ mutationMode(status) }}</code>
       </span>
       <span class="error" v-if="error || status.transport.error">
