@@ -3,6 +3,7 @@ export const DEVELOPER_MODE_HANDSHAKE = 'developer-mode.handshake';
 export const DEVELOPER_MODE_PROTOCOL_VERSION = 1;
 export const CONTROLLED_RECONCILE_OPERATION = 'runtime.reconcile-controlled';
 export const DEVELOPMENT_STATE_OPERATION = 'runtime.reconcile-development-state';
+export const INSPECT_DEVELOPMENT_STATE_OPERATION = 'runtime.inspect-development-state';
 export const CONTROLLED_RUNTIME_OPERATION = 'runtime.execute-controlled';
 
 export function createHandshakeRequest(extensionVersion) {
@@ -13,12 +14,14 @@ export function createHandshakeRequest(extensionVersion) {
       name: 'violentmonkey',
       version: extensionVersion,
     },
-    // Request both mutation generations so a host can select exactly one.
-    // Negotiation rejects co-advertisement; runtime.execute-controlled remains
-    // requested only as a negative capability boundary and is not implemented.
+    // Request both mutation generations plus the independent read-only
+    // inspection capability. Negotiation rejects co-advertised mutation
+    // generations; runtime.execute-controlled remains requested only as a
+    // negative capability boundary and is not implemented.
     requestedCapabilities: [
       CONTROLLED_RECONCILE_OPERATION,
       DEVELOPMENT_STATE_OPERATION,
+      INSPECT_DEVELOPMENT_STATE_OPERATION,
       CONTROLLED_RUNTIME_OPERATION,
     ],
   };
