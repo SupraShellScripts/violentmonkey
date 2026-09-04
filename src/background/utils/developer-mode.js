@@ -6,6 +6,11 @@ import {
   shouldDisconnectDeveloperMode,
 } from '@/common/developer-mode';
 import {
+  createDevelopmentStateInspectionResult,
+  INSPECT_DEVELOPMENT_STATE_RESULT,
+  validateDevelopmentStateInspectionEnvelope,
+} from '@/common/developer-mode-development-state-inspection';
+import {
   createDevelopmentStateResult,
   DEVELOPMENT_STATE_RESULT,
   validateDevelopmentStateEnvelope,
@@ -20,6 +25,7 @@ import {
 } from '@/common/developer-mode-managed-artifacts';
 import {
   activateManagedDevelopmentLifecycle,
+  readManagedDevelopmentLifecycleLedger,
 } from '@/common/developer-mode-managed-state';
 import {
   createControlledReconcileResult,
@@ -34,6 +40,7 @@ import {
   DEVELOPER_MODE_HOST,
   DEVELOPER_MODE_PROTOCOL_VERSION,
   DEVELOPMENT_STATE_OPERATION,
+  INSPECT_DEVELOPMENT_STATE_OPERATION,
   negotiateCapabilities,
   validateHandshakeResponse,
 } from '@/common/developer-mode-transport';
@@ -105,6 +112,13 @@ function assertCurrentDevelopmentState(nativePort, message) {
     throw new Error('Development-state native session is no longer current.');
   }
   return validateDevelopmentStateEnvelope(message, getMutationContext());
+}
+
+function assertCurrentDevelopmentStateInspection(nativePort, message) {
+  if (nativePort !== port) {
+    throw new Error('Development-state inspection native session is no longer current.');
+  }
+  return validateDevelopmentStateInspectionEnvelope(message, getMutationContext());
 }
 
 async function connect() {
@@ -200,6 +214,8 @@ async function onNativeMessage(nativePort, message) {
     await onControlledReconcileMessage(nativePort, message);
   } else if (message?.operation === DEVELOPMENT_STATE_OPERATION) {
     await onDevelopmentStateMessage(nativePort, message);
+  } else if (message?.operation === INSPECT_DEVELOPMENT_STATE_OPERATION) {
+    await onDevelopmentStateInspectionMessage(nativePort, message);
   }
 }
 
@@ -275,6 +291,30 @@ async function onDevelopmentStateMessage(nativePort, message) {
   postNativeResult(nativePort, result);
 }
 
+async function onDevelopmentStateInspectionMessage(nativePort, message) {
+  let phase = 'authorization';
+  let result;
+  try {
+    if (lifecycleActivation) await lifecycleActivation;
+    assertCurrentDevelopmentStateInspection(nativePort, message);
+    phase = 'observation';
+    const ledger = await readManagedDevelopmentLifecycleLedger(storage.api);
+    // Observation is asynchronous. Revalidate the exact native generation and
+    // negotiated inspection authority before returning ledger-derived facts.
+    assertCurrentDevelopmentStateInspection(nativePort, message);
+    const entry = ledger.entries.find(
+      item => item.artifactIdentity === message.request.artifactIdentity) || null;
+    result = createDevelopmentStateInspectionResult({
+      message,
+      status: 'observed',
+      entry,
+    });
+  } catch (err) {
+    result = createBlockedDevelopmentStateInspectionResult(message, phase, err);
+  }
+  postNativeResult(nativePort, result);
+}
+
 function postNativeResult(nativePort, result) {
   try {
     nativePort.postMessage(result);
@@ -328,6 +368,35 @@ function createBlockedDevelopmentStateResult(message, phase, err) {
         ? message.request.desiredState : null,
       managedRevision: null,
       scriptId: null,
+      browserExecution: false,
+      postconditionObserved: false,
+      error: err ? 'request-blocked' : null,
+    };
+  }
+}
+
+function createBlockedDevelopmentStateInspectionResult(message, phase, err) {
+  try {
+    return createDevelopmentStateInspectionResult({
+      message,
+      status: phase === 'observation' ? 'error' : 'blocked',
+      error: phase === 'observation' ? 'inspection-failed' : 'request-blocked',
+    });
+  } catch {
+    return {
+      schemaVersion: DEVELOPER_MODE_PROTOCOL_VERSION,
+      operation: INSPECT_DEVELOPMENT_STATE_RESULT,
+      correlationId: typeof message?.request?.correlationId === 'string'
+        ? message.request.correlationId : null,
+      sessionId: typeof message?.sessionId === 'string' ? message.sessionId : null,
+      status: 'blocked',
+      artifactIdentity: typeof message?.request?.artifactIdentity === 'string'
+        ? message.request.artifactIdentity : null,
+      managed: null,
+      identity: null,
+      committed: null,
+      pending: null,
+      runtimeExecuteControlled: false,
       browserExecution: false,
       postconditionObserved: false,
       error: err ? 'request-blocked' : null,
