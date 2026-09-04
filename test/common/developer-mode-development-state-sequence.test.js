@@ -11,6 +11,7 @@ const IDENTITY = 'controlled-fixture';
 const DIGEST = 'a'.repeat(64);
 const CODE = 'code-a';
 const META = { name: NAME, namespace: NAMESPACE };
+const DESIRED_STATES = ['present-enabled', 'present-disabled', 'absent'];
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -112,6 +113,74 @@ async function reconcile(storageApi, commandApi, desiredState, expectedManagedRe
   });
 }
 
+function generatedActions(model) {
+  const staleRevision = model.managedRevision === 0 ? null : model.managedRevision - 1;
+  const transitions = DESIRED_STATES.filter(state => state !== model.desiredState);
+  return [
+    {
+      label: `replay-null:${model.desiredState}`,
+      desiredState: model.desiredState,
+      expectedManagedRevision: null,
+      result: 'replay',
+    },
+    {
+      label: `replay-wrong-revision:${model.desiredState}`,
+      desiredState: model.desiredState,
+      expectedManagedRevision: model.managedRevision + 7,
+      result: 'replay',
+    },
+    ...transitions.flatMap(desiredState => [
+      {
+        label: `transition:${desiredState}`,
+        desiredState,
+        expectedManagedRevision: model.managedRevision,
+        result: 'transition',
+      },
+      {
+        label: `stale:${desiredState}`,
+        desiredState,
+        expectedManagedRevision: staleRevision,
+        result: 'reject',
+      },
+    ]),
+  ];
+}
+
+function applyGeneratedAction(model, action) {
+  if (action.result !== 'transition') return model;
+  return {
+    desiredState: action.desiredState,
+    managedRevision: model.managedRevision + 1,
+  };
+}
+
+function generateHistories(depth, model = {
+  desiredState: 'present-enabled',
+  managedRevision: 0,
+}, prefix = []) {
+  if (depth === 0) return [prefix];
+  return generatedActions(model).flatMap(action => generateHistories(
+    depth - 1,
+    applyGeneratedAction(model, action),
+    [...prefix, action],
+  ));
+}
+
+function expectCommittedModel(storageApi, model) {
+  const ledger = storageApi.data[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY];
+  expect(ledger.entries).toHaveLength(1);
+  expect(ledger.entries[0]).toMatchObject({
+    artifactIdentity: IDENTITY,
+    committed: {
+      artifactSha256: DIGEST,
+      desiredState: model.desiredState,
+      managedRevision: model.managedRevision,
+      scriptId: model.desiredState === 'absent' ? null : expect.any(Number),
+    },
+    pending: null,
+  });
+}
+
 it('keeps absent replay idempotent after disable, re-enable, and a rejected stale transition', async () => {
   const storageApi = createStorage();
   const commandApi = createCommands();
@@ -151,4 +220,55 @@ it('keeps absent replay idempotent after disable, re-enable, and a rejected stal
   const absentReplay = await reconcile(storageApi, commandApi, 'absent', null);
   expect(absentReplay).toEqual(absent);
   expect(storageApi.data[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]).toEqual(ledgerAfterAbsent);
+});
+
+it('matches the lifecycle model across generated replay, transition, and stale histories', async () => {
+  const histories = generateHistories(3);
+  expect(histories).toHaveLength(216);
+
+  for (const history of histories) {
+    const storageApi = createStorage();
+    const commandApi = createCommands();
+    const initial = await reconcile(storageApi, commandApi, 'present-enabled', null);
+    let model = { desiredState: 'present-enabled', managedRevision: 0 };
+    let lastPresentScriptId = initial.scriptId;
+
+    for (const action of history) {
+      const beforeLedger = clone(storageApi.data[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]);
+      const beforeModel = { ...model };
+      if (action.result === 'reject') {
+        await expect(reconcile(
+          storageApi,
+          commandApi,
+          action.desiredState,
+          action.expectedManagedRevision,
+        )).rejects.toThrow('Managed lifecycle revision precondition failed.');
+        expect(storageApi.data[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]).toEqual(beforeLedger);
+      } else {
+        const result = await reconcile(
+          storageApi,
+          commandApi,
+          action.desiredState,
+          action.expectedManagedRevision,
+        );
+        model = applyGeneratedAction(model, action);
+        expect(result).toMatchObject({
+          desiredState: model.desiredState,
+          managedRevision: model.managedRevision,
+          scriptId: model.desiredState === 'absent' ? null : expect.any(Number),
+        });
+        if (action.result === 'replay') {
+          expect(model).toEqual(beforeModel);
+          expect(storageApi.data[WORKBENCH_MANAGED_ARTIFACTS_STORAGE_KEY]).toEqual(beforeLedger);
+        } else if (beforeModel.desiredState !== 'absent' && model.desiredState !== 'absent') {
+          expect(result.scriptId).toBe(lastPresentScriptId);
+        } else if (beforeModel.desiredState === 'absent' && model.desiredState !== 'absent') {
+          expect(result.scriptId).not.toBe(lastPresentScriptId);
+          lastPresentScriptId = result.scriptId;
+        }
+        if (model.desiredState !== 'absent') lastPresentScriptId = result.scriptId;
+      }
+      expectCommittedModel(storageApi, model);
+    }
+  }
 });
