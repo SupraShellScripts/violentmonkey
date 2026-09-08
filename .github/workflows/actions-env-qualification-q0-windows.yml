@@ -1,0 +1,76 @@
+name: Actions Environment Qualification Q0 - Windows
+
+on:
+  push:
+    branches:
+      - exp/actions-env-qualification-q0-windows
+
+permissions:
+  contents: read
+
+jobs:
+  host-environment:
+    name: host-${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - windows-2022
+          - windows-2025
+          - windows-2025-vs2026
+          - windows-11-arm
+          - windows-11-vs2026-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    steps:
+      - name: Probe Windows host environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = Join-Path $env:RUNNER_TEMP "actions-env-${{ matrix.runner }}.txt"
+          & {
+            'schema=actions-env-q0-v1'
+            'probe_kind=host'
+            'requested_runner=${{ matrix.runner }}'
+            "runner_os=$env:RUNNER_OS"
+            "runner_arch=$env:RUNNER_ARCH"
+            "image_os=$env:ImageOS"
+            "image_version=$env:ImageVersion"
+            "workspace=$env:GITHUB_WORKSPACE"
+            "runner_temp=$env:RUNNER_TEMP"
+            "timestamp_utc=$([DateTime]::UtcNow.ToString('o'))"
+            '--- os/architecture ---'
+            [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+            "os_arch=$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+            "process_arch=$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)"
+            Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber,OSArchitecture | Format-List
+            '--- cpu/memory/virtualization ---'
+            Get-CimInstance Win32_Processor | Select-Object Name,Architecture,NumberOfCores,NumberOfLogicalProcessors,VirtualizationFirmwareEnabled | Format-List
+            Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,HypervisorPresent | Format-List
+            '--- privilege ---'
+            $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $p = New-Object Security.Principal.WindowsPrincipal($id)
+            "is_administrator=$($p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
+            '--- storage ---'
+            Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free,Root | Format-Table -AutoSize
+            '--- tool surfaces ---'
+            foreach ($t in 'pwsh','powershell','git','gh','python','python3','node','npm','dotnet','go','rustc','cargo','cmake','ninja','msbuild','cl','docker','java','javac','choco') {
+              "[$t]"
+              try { (Get-Command $t -ErrorAction Stop).Source } catch { 'not-found' }
+              try { & $t --version 2>&1 | Select-Object -First 3 } catch {}
+            }
+            try { docker info 2>&1 | Select-Object -First 80 } catch {}
+            try { wsl --status 2>&1 | Select-Object -First 30 } catch {}
+            '--- network ---'
+            try { Resolve-DnsName github.com | Select-Object -First 4 | Format-Table -AutoSize } catch {}
+            try { "github_api_http=$((Invoke-WebRequest -UseBasicParsing -Uri 'https://api.github.com/' -Method Get).StatusCode)" } catch { 'github_api_unavailable' }
+          } *>&1 | Out-File -FilePath $out -Encoding utf8
+          Get-Content $out
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: actions-env-${{ matrix.runner }}
+          path: ${{ runner.temp }}\actions-env-${{ matrix.runner }}.txt
+          if-no-files-found: warn
+          retention-days: 7
