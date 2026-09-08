@@ -21,38 +21,48 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force q01 | Out-Null
-          "alpha`nbeta`ngamma" | Set-Content -NoNewline q01/input.txt
+          [IO.File]::WriteAllBytes((Join-Path (Get-Location) 'q01/input.txt'), [Text.Encoding]::UTF8.GetBytes("alpha`nbeta`ngamma`n"))
           $bytes = [IO.File]::ReadAllBytes((Resolve-Path q01/input.txt))
           $sha = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
           $obj = [ordered]@{ sha256=$sha; machine=$env:PROCESSOR_ARCHITECTURE; os=[Environment]::OSVersion.VersionString }
           $obj | ConvertTo-Json -Compress | Set-Content q01/common.json
           $obj | ConvertTo-Json -Compress
+          if ($sha -ne '4fdbc441ea7b546100e086ac1e4fc5ae6749b7314311c99db05be450eca12996') { throw "portable payload digest mismatch: $sha" }
 
-      - name: Discover Visual Studio toolchain correctly
+      - name: Discover and exercise Visual Studio toolchain
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $vswhere = "$env:ProgramFiles(x86)\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
+          $candidates = @()
+          if (${env:ProgramFiles(x86)}) { $candidates += (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe') }
+          if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe') }
+          $cmd = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $candidates += $cmd.Source }
+          $vswhere = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $vswhere) {
             "VSWHERE=ABSENT" | Tee-Object -FilePath q01/vs.txt
+            Get-ChildItem 'C:\Program Files*\Microsoft Visual Studio\Installer\vswhere.exe' -ErrorAction SilentlyContinue | ForEach-Object { "DISCOVERED=$($_.FullName)" | Tee-Object -FilePath q01/vs.txt -Append }
             exit 0
           }
-          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $install) {
-            $install = & $vswhere -latest -products * -property installationPath
-          }
-          "VS_INSTALL=$install" | Tee-Object -FilePath q01/vs.txt
+          "VSWHERE=$vswhere" | Tee-Object -FilePath q01/vs.txt
+          $install = & $vswhere -latest -products * -property installationPath
+          "VS_INSTALL=$install" | Tee-Object -FilePath q01/vs.txt -Append
           if (-not $install) { exit 0 }
           $devcmd = Join-Path $install 'Common7\Tools\VsDevCmd.bat'
           "VSDEVCMD=$devcmd exists=$((Test-Path $devcmd))" | Tee-Object -FilePath q01/vs.txt -Append
-          if (Test-Path $devcmd) {
-            @'
+          if (-not (Test-Path $devcmd)) { exit 0 }
+          @'
           #include <stdio.h>
           int main(void){ puts("q01-msvc-ok"); return 0; }
           '@ | Set-Content q01\hello.c
-            $cmd = '"' + $devcmd + '" -no_logo && where cl && where msbuild && cl /nologo q01\hello.c /Fe:q01\hello.exe && q01\hello.exe'
-            cmd /d /s /c $cmd 2>&1 | Tee-Object -FilePath q01/vs-build.txt
-            if (Test-Path q01\hello.exe) { "MSVC_COMPILE=PASS" | Tee-Object -FilePath q01/vs.txt -Append }
+          $batch = '"' + $devcmd + '" -no_logo && where cl && where msbuild && cl /nologo q01\hello.c /Fe:q01\hello.exe && q01\hello.exe'
+          cmd /d /s /c $batch 2>&1 | Tee-Object -FilePath q01/vs-build.txt
+          if (Test-Path q01\hello.exe) {
+            "MSVC_COMPILE=PASS" | Tee-Object -FilePath q01/vs.txt -Append
+            Write-Host 'MSVC_COMPILE=PASS'
+          } else {
+            "MSVC_COMPILE=UNPROVEN" | Tee-Object -FilePath q01/vs.txt -Append
+            Write-Host 'MSVC_COMPILE=UNPROVEN'
           }
           exit 0
 
@@ -65,15 +75,21 @@ jobs:
           if (Get-Command docker -ErrorAction SilentlyContinue) {
             docker version 2>&1 | Out-File q01/docker.txt
             docker info 2>&1 | Out-File q01/docker.txt -Append
-            if ($LASTEXITCODE -eq 0) { "DOCKER_DAEMON=PASS" | Out-File q01/docker.txt -Append }
+            if ($LASTEXITCODE -eq 0) {
+              "DOCKER_DAEMON=PASS" | Out-File q01/docker.txt -Append
+              Write-Host 'DOCKER_DAEMON=PASS'
+            } else { Write-Host 'DOCKER_DAEMON=UNAVAILABLE' }
           } else {
             "DOCKER=ABSENT" | Set-Content q01/docker.txt
+            Write-Host 'DOCKER=ABSENT'
           }
           if (Get-Command wsl -ErrorAction SilentlyContinue) {
-            wsl --status 2>&1 | Out-File q01/wsl.txt
-            wsl -l -v 2>&1 | Out-File q01/wsl.txt -Append
+            Write-Host 'WSL_COMMAND=PRESENT'
+            wsl --status 2>&1 | Tee-Object -FilePath q01/wsl.txt
+            wsl -l -v 2>&1 | Tee-Object -FilePath q01/wsl.txt -Append
           } else {
             "WSL_COMMAND=ABSENT" | Set-Content q01/wsl.txt
+            Write-Host 'WSL_COMMAND=ABSENT'
           }
           exit 0
 
