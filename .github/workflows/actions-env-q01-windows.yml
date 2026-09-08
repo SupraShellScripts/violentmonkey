@@ -1,0 +1,83 @@
+name: Actions environment qualification Q0.1 - Windows
+
+on:
+  push:
+    branches:
+      - exp/actions-env-q01-windows-20260908
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Common deterministic workload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force q01 | Out-Null
+          "alpha`nbeta`ngamma" | Set-Content -NoNewline q01/input.txt
+          $bytes = [IO.File]::ReadAllBytes((Resolve-Path q01/input.txt))
+          $sha = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+          $obj = [ordered]@{ sha256=$sha; machine=$env:PROCESSOR_ARCHITECTURE; os=[Environment]::OSVersion.VersionString }
+          $obj | ConvertTo-Json -Compress | Set-Content q01/common.json
+          $obj | ConvertTo-Json -Compress
+
+      - name: Discover Visual Studio toolchain correctly
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $vswhere = "$env:ProgramFiles(x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            "VSWHERE=ABSENT" | Tee-Object -FilePath q01/vs.txt
+            exit 0
+          }
+          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $install) {
+            $install = & $vswhere -latest -products * -property installationPath
+          }
+          "VS_INSTALL=$install" | Tee-Object -FilePath q01/vs.txt
+          if (-not $install) { exit 0 }
+          $devcmd = Join-Path $install 'Common7\Tools\VsDevCmd.bat'
+          "VSDEVCMD=$devcmd exists=$((Test-Path $devcmd))" | Tee-Object -FilePath q01/vs.txt -Append
+          if (Test-Path $devcmd) {
+            @'
+          #include <stdio.h>
+          int main(void){ puts("q01-msvc-ok"); return 0; }
+          '@ | Set-Content q01\hello.c
+            $cmd = '"' + $devcmd + '" -no_logo && where cl && where msbuild && cl /nologo q01\hello.c /Fe:q01\hello.exe && q01\hello.exe'
+            cmd /d /s /c $cmd 2>&1 | Tee-Object -FilePath q01/vs-build.txt
+            if (Test-Path q01\hello.exe) { "MSVC_COMPILE=PASS" | Tee-Object -FilePath q01/vs.txt -Append }
+          }
+          exit 0
+
+      - name: Docker and WSL practical state
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          "RUNNER=${{ matrix.runner }}" | Set-Content q01/platform.txt
+          whoami /all | Out-File q01/platform.txt -Append
+          if (Get-Command docker -ErrorAction SilentlyContinue) {
+            docker version 2>&1 | Out-File q01/docker.txt
+            docker info 2>&1 | Out-File q01/docker.txt -Append
+            if ($LASTEXITCODE -eq 0) { "DOCKER_DAEMON=PASS" | Out-File q01/docker.txt -Append }
+          } else {
+            "DOCKER=ABSENT" | Set-Content q01/docker.txt
+          }
+          if (Get-Command wsl -ErrorAction SilentlyContinue) {
+            wsl --status 2>&1 | Out-File q01/wsl.txt
+            wsl -l -v 2>&1 | Out-File q01/wsl.txt -Append
+          } else {
+            "WSL_COMMAND=ABSENT" | Set-Content q01/wsl.txt
+          }
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: q01-${{ matrix.runner }}
+          path: q01/
