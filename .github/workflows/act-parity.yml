@@ -1,6 +1,13 @@
 name: Hosted act parity
 
 on:
+  # Qualify changes to the parity workflow and its checked-in launcher before
+  # accepting them; all other ordinary PRs avoid the expensive nested act rep.
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/act-parity.yml'
+      - 'tools/ci.sh'
   push:
     branches:
       - 'agent/**'
@@ -10,8 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: violentmonkey-act-parity-${{ github.ref }}
-  cancel-in-progress: true
+  group: violentmonkey-act-parity-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   act-parity:
