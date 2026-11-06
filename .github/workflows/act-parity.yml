@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: violentmonkey-act-parity-${{ github.ref }}
-  cancel-in-progress: true
+  group: violentmonkey-act-parity-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   act-parity:
