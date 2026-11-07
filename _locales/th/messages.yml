@@ -438,6 +438,12 @@ labelDataImport:
   description: Section title of data import.
   message: ''
   touched: false
+labelDeveloperModeInspection:
+  description: ป้ายกำกับสถานะความพร้อมของการตรวจสอบแบบอ่านอย่างเดียว
+  message: 'การตรวจสอบแบบอ่านอย่างเดียว:'
+labelDeveloperModeMutationMode:
+  description: ป้ายกำกับโหมดการเปลี่ยนแปลงของ Developer Mode
+  message: 'โหมดการเปลี่ยนแปลง:'
 labelDonate:
   description: Label of link to donate page.
   message: ''

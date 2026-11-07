@@ -473,6 +473,12 @@ labelDeveloperModeHint:
     development tooling. A separately installed compatible Workbench native
     host is required. Controlled browser execution remains unavailable until
     separately implemented and authorized.
+labelDeveloperModeInspection:
+  description: Label for the separately negotiated read-only Workbench inspection capability.
+  message: 'Read-only inspection:'
+labelDeveloperModeMutationMode:
+  description: Label for the currently negotiated Developer Mode mutation mechanism.
+  message: 'Mutation mode:'
 labelDonate:
   description: Label of link to donate page.
   message: Donate

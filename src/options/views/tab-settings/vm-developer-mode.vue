@@ -26,8 +26,12 @@
         <code>{{ status.transport.sessionId }}</code>
       </span>
       <span>
-        Mutation mode:
+        {{ i18n('labelDeveloperModeMutationMode') }}
         <code>{{ mutationMode(status) }}</code>
+      </span>
+      <span>
+        {{ i18n('labelDeveloperModeInspection') }}
+        <code>{{ inspectionAvailability(status) }}</code>
       </span>
       <span class="error" v-if="error || status.transport.error">
         {{ error || status.transport.error }}
@@ -54,6 +58,10 @@ function mutationMode(value) {
   if (value?.developmentState?.available) return 'lifecycle';
   if (value?.controlledReconcile?.available) return 'reconcile';
   return 'unavailable';
+}
+
+function inspectionAvailability(value) {
+  return value?.developmentStateInspection?.available ? 'available' : 'unavailable';
 }
 
 async function refresh() {
