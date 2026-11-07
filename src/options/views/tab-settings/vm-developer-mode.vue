@@ -26,11 +26,11 @@
         <code>{{ status.transport.sessionId }}</code>
       </span>
       <span>
-        Mutation mode:
+        {{ i18n('labelDeveloperModeMutationMode') }}
         <code>{{ mutationMode(status) }}</code>
       </span>
       <span>
-        Read-only inspection:
+        {{ i18n('labelDeveloperModeInspection') }}
         <code>{{ inspectionAvailability(status) }}</code>
       </span>
       <span class="error" v-if="error || status.transport.error">

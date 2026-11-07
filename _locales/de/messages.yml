@@ -455,6 +455,12 @@ labelDataImport:
   description: Section title of data import.
   message: Datenimport
   touched: false
+labelDeveloperModeInspection:
+  description: Schreibgeschützte Verfügbarkeit der Workbench-Inspektion.
+  message: 'Nur-Lese-Inspektion:'
+labelDeveloperModeMutationMode:
+  description: Aktuell ausgehandelter Developer-Mode-Änderungsmodus.
+  message: 'Änderungsmodus:'
 labelDonate:
   description: Label of link to donate page.
   message: Spenden
