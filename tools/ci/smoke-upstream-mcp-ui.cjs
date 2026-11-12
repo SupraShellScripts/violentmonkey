@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 'use strict';
-// Synthetic-only browser check: the official upstream extension must render
-// its MCP consent surface without performing an agent connection or tab grant.
+// Synthetic-only end-to-end test: official extension <-> official MCP server,
+// explicit consent in a disposable browser profile, read-only and no tab grants.
 const fs = require('node:fs');
+const { spawn } = require('node:child_process');
+const { createRequire } = require('node:module');
+const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/tmp/pw/node_modules/playwright');
 const input = path.resolve(process.argv[2] || '');
@@ -11,7 +14,20 @@ if (!fs.existsSync(path.join(input, 'manifest.json'))) {
 }
 const expectedSha = process.env.UPSTREAM_EXTENSION_SHA || '';
 if (!/^[0-9a-f]{40}$/.test(expectedSha)) throw new Error('Missing immutable upstream extension SHA');
+const mcpSourceSha = process.env.MCP_SOURCE_SHA || '';
+if (!/^[0-9a-f]{40}$/.test(mcpSourceSha)) throw new Error('Missing immutable official MCP SHA');
+const TOKEN = 'synthetic-bakeoff-local-only-not-a-credential';
+async function waitFor(check, maxMs=15000) {
+  const end=Date.now()+maxMs;
+  while (Date.now()<end) {
+    try { if (await check()) return; } catch {}
+    await new Promise(done=>setTimeout(done,150));
+  }
+  throw new Error('Timed out waiting for synthetic MCP connection state');
+}
 async function main() {
+  let serverProcess;
+  let agent;
   const ctx = await chromium.launchPersistentContext('', {
     channel: 'chromium',
     headless: true,
@@ -54,19 +70,111 @@ async function main() {
     if (buttons !== 0) throw new Error('Unrequested MCP connection exposed action buttons');
     const links = await section.locator('a[href]').count();
     if (links < 1) throw new Error('Official MCP guidance link not visible');
+
+    // Start the immutable upstream MCP CLI on container-local loopback.
+    // No user browser, external port or real token enters this workcell.
+    serverProcess=spawn(process.execPath, [
+      '/mcp/packages/server/dist/cli.js', '--transport', 'http', '--readonly',
+      '--host', '127.0.0.1', '--port', '5678', '--token', TOKEN,
+    ],{stdio:['pipe','ignore','ignore']});
+    await waitFor(async()=>{
+      if (serverProcess.exitCode !== null) throw Error('MCP server exited early');
+      return (await fetch('http://127.0.0.1:5678/health')).ok;
+    },15000);
+
+    // The SDK comes from the actual immutable MCP workspace, not a test
+    // imitation or unrelated globally installed package.
+    const fromServer=createRequire('/mcp/packages/server/package.json');
+    const sdkClientPath=fromServer.resolve('@modelcontextprotocol/sdk/client/index.js');
+    const sdkTransportPath=fromServer.resolve('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const [{ Client }, { StreamableHTTPClientTransport }]=await Promise.all([
+      import(pathToFileURL(sdkClientPath).href),
+      import(pathToFileURL(sdkTransportPath).href),
+    ]);
+    agent=new Client({name:'public-synthetic-bakeoff',version:'1.0.0'});
+    await agent.connect(new StreamableHTTPClientTransport(
+      new URL('http://127.0.0.1:5678/mcp'),
+      {requestInit:{headers:{Authorization:'Bearer '+TOKEN}}}
+    ));
+    const initial=(await agent.listTools()).tools.map(x=>x.name);
+    if (initial.length!==1 || initial[0]!=='vm_status') {
+      throw Error('Disconnected server must expose only vm_status');
+    }
+    const disconnected=await agent.callTool({name:'vm_status',arguments:{}});
+    if (disconnected.structuredContent?.connected!==false) {
+      throw Error('Disconnected status misreported');
+    }
+
+    // Navigate only the official synthetic connection URL to trigger the
+    // extension's consent page; never approve a real browser/server.
+    const consentTab=await ctx.newPage();
+    const connectUrl='https://violentmonkey.github.io/mcp_connect.html?port=5678&token='+TOKEN;
+    await consentTab.goto(connectUrl,{waitUntil:'commit',timeout:20000}).catch(()=>{});
+    await section.locator('h3[data-status="pending"]').waitFor({state:'visible',timeout:20000});
+    const pendingButtons=section.locator('button');
+    if (await pendingButtons.count()!==2) throw Error('Expected explicit Approve/Reject controls');
+    for (let i=0;i<2;i++) {
+      if (!(await pendingButtons.nth(i).textContent()||'').trim()) {
+        throw Error('Consent action lacks a readable label');
+      }
+    }
+    const preApproval=(await agent.listTools()).tools.map(x=>x.name);
+    if (preApproval.length!==1 || preApproval[0]!=='vm_status') {
+      throw Error('MCP must not grant tools merely on navigation');
+    }
+    await pendingButtons.first().click(); // explicit consent in synthetic profile only
+    await waitFor(async()=>{
+      const result=await agent.callTool({name:'vm_status',arguments:{}});
+      return result.structuredContent?.connected===true;
+    },20000);
+    await section.locator('h3[data-status="open"]').waitFor({state:'visible',timeout:20000});
+    const tools=(await agent.listTools()).tools.map(x=>x.name).sort();
+    const expected=['vm_status','scripts_list','scripts_get','tabs_list',
+      'tab_scripts','script_logs','scripts_test_match'].sort();
+    if (JSON.stringify(tools)!==JSON.stringify(expected)) {
+      throw Error('Readonly MCP tool intersection differs from stable 2.50.0: '+tools.join(','));
+    }
+    const scriptList=await agent.callTool({name:'scripts_list',arguments:{}});
+    if (scriptList.isError || scriptList.structuredContent?.scripts?.length!==0) {
+      throw Error('Synthetic empty profile did not list zero scripts');
+    }
+    const tabList=await agent.callTool({name:'tabs_list',arguments:{}});
+    if (tabList.isError || tabList.structuredContent?.tabs?.length!==0) {
+      throw Error('Tabs were granted without explicit tab consent');
+    }
+    const disallowed=['scripts_write','scripts_delete','scripts_set_enabled','tab_reload','script_call'];
+    if (disallowed.some(name=>tools.includes(name))) {
+      throw Error('Readonly connection exposes mutation tool');
+    }
+    await section.locator('button').first().click(); // disconnect synthetic server
+    await waitFor(async()=>{
+      const result=await agent.callTool({name:'vm_status',arguments:{}});
+      return result.structuredContent?.connected===false;
+    },12000);
+    const after=(await agent.listTools()).tools.map(x=>x.name);
+    if (after.length!==1 || after[0]!=='vm_status') {
+      throw Error('Disconnected server retained a privileged tool');
+    }
+    await consentTab.close();
     const evidence = {
-      schemaVersion:1, grade:'UPSTREAM_BROWSER_CONSENT_UI_UNCONNECTED_ONLY',
-      status:'PASS', upstreamExtensionSha:expectedSha,
+      schemaVersion:1, grade:'UPSTREAM_MCP_LIVE_SYNTHETIC_READONLY_BAKEOFF',
+      status:'PASS', upstreamExtensionSha:expectedSha, upstreamMcpSha:mcpSourceSha,
       runtimeId:id, manifestVersion:manifest.manifest_version,
       extensionVersion:manifest.version, nodeVersion:process.version,
-      profile:'ephemeral-unprivileged-test-data-only',
+      profile:'ephemeral-test-data-only',
       checks:{upstreamMcpConsentPanelVisible:true,headingLabeled:true,unconnectedIdle:true,
-        grantsCreated:false,writeToolsInvoked:false,nativeHostUsed:false,authenticatedProfileUsed:false},
+        explicitSyntheticApprovalRequired:true, toolsBeforeApproval:['vm_status'],
+        toolNamesOnApproval:expected, noGrantTabListingObserved:true,
+        readonlyNoMutationTools:true, noInstalledScripts:true,
+        disconnectRevokesTools:true, grantsCreated:false,writeToolsInvoked:false,
+        nativeHostUsed:false,authenticatedProfileUsed:false},
       promotionAuthorized:false, completeMcpHeadToHead:false,
     };
     console.log(JSON.stringify(evidence));
     await page.close();
   } finally {
+    await agent?.close().catch(()=>{});
+    if (serverProcess) serverProcess.kill('SIGTERM');
     await ctx.close();
   }
 }

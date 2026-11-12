@@ -121,11 +121,19 @@ jobs:
           ref: ${{ env.UPSTREAM_EXTENSION_SHA }}
           path: upstream-extension
           persist-credentials: false
+      - name: Checkout immutable upstream MCP server
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6, Node 24
+        with:
+          repository: violentmonkey/mcp
+          ref: ${{ env.MCP_SOURCE_SHA }}
+          path: upstream-mcp
+          persist-credentials: false
       - name: Build upstream MV3 and observe unapproved UI in disposable browser container
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C upstream-extension rev-parse HEAD)" = "$UPSTREAM_EXTENSION_SHA"
+          test "$(git -C upstream-mcp rev-parse HEAD)" = "$MCP_SOURCE_SHA"
           test "$(git -C fork rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           sh fork/tools/ci/run-mcp-reuse-in-container.sh extension-browser
           cat upstream-extension/upstream-mcp-browser-smoke.json

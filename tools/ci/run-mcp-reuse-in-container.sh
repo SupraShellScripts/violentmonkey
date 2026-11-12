@@ -49,13 +49,28 @@ case "$1" in
         pnpm build:mv3
         test -f dist-mv3/manifest.json
       '
+    # Build exact official MCP server without invoking its tools against
+    # non-synthetic browser data. All dependencies remain in this workcell.
+    docker run --rm --network bridge --cap-drop ALL --security-opt no-new-privileges \
+      --pids-limit 256 --memory 3g --cpus 2 \
+      --user "$(id -u):$(id -g)" \
+      -e CI=1 -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
+      -e PNPM_HOME=/tmp/pnpm-home -e PNPM_STORE_DIR=/tmp/pnpm-store \
+      -v "$PWD/upstream-mcp:/work:rw" -w /work "$IMAGE" sh -ec '
+        npm install --prefix /tmp/pnpm-cli --no-audit --no-fund --ignore-scripts pnpm@12.10.1
+        export PATH="/tmp/pnpm-cli/node_modules/.bin:$PATH"
+        pnpm install --frozen-lockfile
+        pnpm build
+        test -f packages/server/dist/cli.js
+      '
     # The independent Playwright/Chromium installation is container-local.
     # Only the already-built public artifact and harness are mounted read-only.
     docker run --rm --network bridge --security-opt no-new-privileges \
       --shm-size 1g --pids-limit 512 --memory 5g --cpus 3 \
       -e CI=1 -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
-      -e UPSTREAM_EXTENSION_SHA="$UPSTREAM_EXTENSION_SHA" \
+      -e UPSTREAM_EXTENSION_SHA="$UPSTREAM_EXTENSION_SHA" -e MCP_SOURCE_SHA="$MCP_SOURCE_SHA" \
       -v "$PWD/upstream-extension:/upstream:ro" -v "$PWD/fork:/fork:ro" \
+      -v "$PWD/upstream-mcp:/mcp:ro" \
       -w /upstream "$IMAGE" sh -ec '
         npm install --prefix /tmp/pw --no-audit --no-fund --ignore-scripts playwright@1.62.1
         node /tmp/pw/node_modules/playwright/cli.js install --with-deps chromium
