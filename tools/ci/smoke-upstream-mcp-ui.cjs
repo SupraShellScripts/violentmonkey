@@ -64,8 +64,6 @@ async function main() {
         grantsCreated:false,writeToolsInvoked:false,nativeHostUsed:false,authenticatedProfileUsed:false},
       promotionAuthorized:false, completeMcpHeadToHead:false,
     };
-    fs.writeFileSync(path.join(path.dirname(input),'upstream-mcp-browser-smoke.json'),
-      JSON.stringify(evidence,null,2)+'\n');
     console.log(JSON.stringify(evidence));
     await page.close();
   } finally {

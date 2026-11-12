@@ -33,25 +33,39 @@ case "$1" in
       '
     ;;
   extension-browser)
-    # Build official 2.50.0 with its own declared pnpm version inside a
-    # pinned throwaway container, then run an isolated local Chromium profile.
-    # No real-user profile, secrets, host package installs or exposed ports.
+    # Separate dependency/build permissions from browser system dependencies.
+    # Build as the checkout owner so pnpm can create its virtual store; no
+    # privileged writes to host mounts. The browser sees source read-only.
     : "$UPSTREAM_EXTENSION_SHA"
     docker run --rm --network bridge --cap-drop ALL --security-opt no-new-privileges \
-      --shm-size 1g --pids-limit 512 --memory 5g --cpus 3 \
+      --pids-limit 256 --memory 3g --cpus 2 \
+      --user "$(id -u):$(id -g)" \
       -e CI=1 -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
-      -e UPSTREAM_EXTENSION_SHA="$UPSTREAM_EXTENSION_SHA" \
       -e PNPM_HOME=/tmp/pnpm-home -e PNPM_STORE_DIR=/tmp/pnpm-store \
-      -v "$PWD:/input:rw" -w /input/upstream-extension "$IMAGE" sh -ec '
+      -v "$PWD/upstream-extension:/work:rw" -w /work "$IMAGE" sh -ec '
         npm install --prefix /tmp/pnpm-cli --no-audit --no-fund --ignore-scripts pnpm@12.13.0
         export PATH="/tmp/pnpm-cli/node_modules/.bin:$PATH"
         pnpm install --frozen-lockfile --ignore-scripts
         pnpm build:mv3
         test -f dist-mv3/manifest.json
+      '
+    # The independent Playwright/Chromium installation is container-local.
+    # Only the already-built public artifact and harness are mounted read-only.
+    docker run --rm --network bridge --security-opt no-new-privileges \
+      --shm-size 1g --pids-limit 512 --memory 5g --cpus 3 \
+      -e CI=1 -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
+      -e UPSTREAM_EXTENSION_SHA="$UPSTREAM_EXTENSION_SHA" \
+      -v "$PWD/upstream-extension:/upstream:ro" -v "$PWD/fork:/fork:ro" \
+      -w /upstream "$IMAGE" sh -ec '
         npm install --prefix /tmp/pw --no-audit --no-fund --ignore-scripts playwright@1.62.1
         node /tmp/pw/node_modules/playwright/cli.js install --with-deps chromium
-        node /input/fork/tools/ci/smoke-upstream-mcp-ui.cjs /input/upstream-extension/dist-mv3
-      '
+        node /fork/tools/ci/smoke-upstream-mcp-ui.cjs /upstream/dist-mv3
+      ' | tee upstream-extension/upstream-mcp-browser-run.log
+    # Last stdout line is the generated JSON receipt. No output mount write.
+    tail -n 1 upstream-extension/upstream-mcp-browser-run.log > upstream-extension/upstream-mcp-browser-smoke.json
+    jq -e '.status == "PASS" and .promotionAuthorized == false and .completeMcpHeadToHead == false' \
+      upstream-extension/upstream-mcp-browser-smoke.json >/dev/null
+    rm upstream-extension/upstream-mcp-browser-run.log
     ;;
   *)
     echo "usage: run-mcp-reuse-in-container.sh census|test|extension-browser" >&2
