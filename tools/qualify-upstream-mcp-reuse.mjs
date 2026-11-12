@@ -25,6 +25,8 @@ const tools = read(mcp, 'packages/protocol/src/tools.ts');
 const cli = read(mcp, 'packages/server/src/cli.ts');
 const server = read(mcp, 'packages/server/src/mcp.ts');
 const protocol = read(mcp, 'README.md');
+const stableMcp = read(upstream, 'src/background/utils/mcp.js');
+const stableHandlers = [...stableMcp.matchAll(/\bc\.handle\('([^']+)'/g)].map(m => m[1]);
 const officialTools = [...tools.matchAll(/^  ([a-z_]+): defineTool\(\{/gm)].map(m => m[1]);
 const uniqueTools = [...new Set(officialTools)];
 const check = (value, label) => { if (!value) throw new Error('MCP public source contract drift: ' + label); };
@@ -45,6 +47,13 @@ check(existsSync(join(upstream, 'src/background/utils/mcp.js')), 'official MCP e
 check(existsSync(join(upstream, 'src/options/views/tab-settings/vm-mcp.vue')), 'official MCP consent UI not present');
 check(mcpVersion === '0.2.0', 'official MCP server source version changed');
 check(uniqueTools.length === officialTools.length && uniqueTools.length >= 12, 'tool list changed');
+check(new Set(stableHandlers).size === stableHandlers.length, 'duplicate stable extension MCP handlers');
+check(stableHandlers.length >= 9 && stableHandlers.every(name => uniqueTools.includes(name)),
+  'stable release handler intersection drift');
+const serverOnlyTools = uniqueTools.filter(name => !stableHandlers.includes(name));
+check(serverOnlyTools.length === 3 && ['script_handlers', 'script_call', 'script_results']
+  .every(name => serverOnlyTools.includes(name)),
+  '2.50.0 stable release does not expose newer GM.mcp server tools');
 check(toolSpec('scripts_get').includes('readOnlyHint: true'), 'scripts_get read-only annotation');
 check(toolSpec('scripts_get').includes('scriptDetail'), 'scripts_get returns source-bearing detail');
 check(tools.includes('code: z.string()'), 'scriptDetail exposes complete source');
@@ -64,8 +73,8 @@ const result = {
   status: 'PASS',
   inputs: {
     downstreamFork: { sourceCommit: head(fork), version: forkVersion, developerModePresent: true, mcpPresent: false },
-    upstreamExtension: { sourceCommit: head(upstream), version: upstreamVersion, mcpPresent: true },
-    officialMcp: { sourceCommit: head(mcp), sourceVersion: mcpVersion, toolCount: uniqueTools.length, tools: uniqueTools },
+    upstreamExtension: { sourceCommit: head(upstream), version: upstreamVersion, mcpPresent: true, advertisedHandlers: stableHandlers, supportedHandlerCount: stableHandlers.length },
+    officialMcp: { sourceCommit: head(mcp), sourceVersion: mcpVersion, toolCount: uniqueTools.length, tools: uniqueTools, serverToolsAbsentFromStableRelease: serverOnlyTools },
   },
   confirmedBoundaries: {
     scriptsGetClassifiedReadOnlyEvenThoughItReturnsSource: true,
@@ -73,6 +82,7 @@ const result = {
     readonlyExplicitOptIn: true,
     loopbackAndStdioDefaults: true,
     upstreamMcpDoesNotProveManagedArtifactOwnership: true,
+    stableExtensionExposesOnlyItsOwnRegisteredHandlerSubset: true,
     newManagedExecutionAuthority: false,
   },
   notProven: ['official MCP live browser handshake', 'tab-grant enforcement in a real extension',

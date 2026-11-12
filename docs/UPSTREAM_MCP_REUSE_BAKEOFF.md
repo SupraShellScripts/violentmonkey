@@ -10,6 +10,8 @@ Can official Violentmonkey MCP replace part or all of the customized Workbench D
 - Upstream stable: `violentmonkey/violentmonkey@f3f4e7f50e92f84e83076046171e042ecce6c4ff`, release **v2.50.0**, with official MCP support.
 - Official standalone MCP monorepo: `violentmonkey/mcp@8e85ac81eefedbdf2ccc916873d428aff0d6e121`, which declares server version **0.2.0** in source. This source version is not an assertion about the version currently published on npm.
 
+The 2.50.0 extension actually registers **10** MCP handlers. The later MCP server's protocol defines **13**: `script_handlers`, `script_call`, and `script_results` are not available through the pinned stable extension. The server must expose the negotiated intersection, not advertise these three until a compatible extension revision is qualified.
+
 ## Distinguish supported function from authority
 
 | Dimension | Current Workbench Developer Mode | Official upstream MCP | Decision criterion |
@@ -29,6 +31,10 @@ The isolated `upstream-mcp-reuse-bakeoff.yml` workflow executes two independent 
 2. **Upstream native tests**: run official MCP monorepo `pnpm build`, `pnpm typecheck`, and `pnpm test` inside a disposable container on ephemeral public hosted GitHub Actions. Container-only dependency retrieval uses network access without published ports or credentials. These are upstream tests, not our Workbench HIL.
 
 The downstream fork's existing native three-OS Chromium smoke remains separate, at public PR #31. Neither lane authenticates a real user profile or exercises source mutation.
+
+## Observed version-specific finding
+
+The source census verifies declared MCP capabilities against the **actual 2.50.0 `client.handle` registrations**. Unlike a README-based estimate, this detects extra server operations that the stable extension cannot provide. The three missing `GM.mcp` handler/result tools should not be treated as stable features. Upstream server native tests alone cannot prove extension/browser interoperability or our managed-artifact authority.
 
 ## Promotion decision gates
 
