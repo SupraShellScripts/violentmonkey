@@ -261,6 +261,62 @@ async function main() {
     if (empty.isError || empty.structuredContent?.scripts?.length!==0) {
       throw Error('Synthetic fixture not deleted after write test');
     }
+
+    // This tests generic upstream identity matching, not any approved
+    // Workbench-managed operation. Both identities are synthetic and owned
+    // by the throwaway browser fixture. The second write intentionally omits
+    // id to measure whether @name/@namespace matching adopts existing code.
+    const unmanagedCode=sampleCode.replace('const VERSION = 1;',
+      'const OWNERSHIP = "unmanaged-synthetic";');
+    const conflictingCode=sampleCode.replace('const VERSION = 1;',
+      'const OWNERSHIP = "would-be-managed-synthetic";');
+    const unmanagedCreate=await writer.callTool({
+      name:'scripts_write',arguments:{code:unmanagedCode},
+    });
+    const unmanagedId=unmanagedCreate.structuredContent?.script?.id;
+    if (unmanagedCreate.isError || unmanagedCreate.structuredContent?.created!==true ||
+        !Number.isInteger(unmanagedId) || unmanagedId < 1) {
+      throw Error('Failed to install synthetic unmanaged-identity fixture');
+    }
+    const unmanagedFirst=await writer.callTool({
+      name:'scripts_get',arguments:{id:unmanagedId},
+    });
+    if (unmanagedFirst.isError ||
+        !unmanagedFirst.structuredContent?.script?.code.includes('unmanaged-synthetic')) {
+      throw Error('Unmanaged fixture source not preserved after initial creation');
+    }
+    const collision=await writer.callTool({
+      name:'scripts_write',arguments:{code:conflictingCode},
+    });
+    if (collision.isError || collision.structuredContent?.created!==false ||
+        collision.structuredContent?.script?.id!==unmanagedId) {
+      throw Error('Upstream name/namespace collision behavior changed');
+    }
+    const collided=await writer.callTool({
+      name:'scripts_get',arguments:{id:unmanagedId},
+    });
+    if (collided.isError ||
+        !collided.structuredContent?.script?.code.includes('would-be-managed-synthetic') ||
+        collided.structuredContent?.script?.code.includes('unmanaged-synthetic')) {
+      throw Error('Synthetic identity collision did not modify existing script');
+    }
+    const deletedCollision=await writer.callTool({
+      name:'scripts_delete',arguments:{id:unmanagedId},
+    });
+    if (deletedCollision.isError || deletedCollision.structuredContent?.id!==unmanagedId) {
+      throw Error('Synthetic unmanaged fixture cleanup failed');
+    }
+    const afterCollision=await writer.callTool({name:'scripts_list',arguments:{}});
+    if (afterCollision.isError || afterCollision.structuredContent?.scripts?.length!==0) {
+      throw Error('Synthetic name/namespace collision test did not clean up');
+    }
+    const collisionSourceDigests={
+      initial:digest(unmanagedFirst.structuredContent.script.code),
+      overwritten:digest(collided.structuredContent.script.code),
+    };
+    if (collisionSourceDigests.initial===collisionSourceDigests.overwritten) {
+      throw Error('Synthetic collision digests did not change');
+    }
     await section.locator('button').first().click(); // synthetic Disconnect
     await waitFor(async()=>{
       const s=await writer.callTool({name:'vm_status',arguments:{}});
@@ -283,12 +339,14 @@ async function main() {
         ungrantedTabLogReadDenied:true, noInstalledScripts:true,
         disconnectRevokesTools:true, writableSyntheticFixtureCreateUpdateDelete:true,
         staleWriteAcceptedWithoutExpectedRevision:true,
+        sameNameNamespaceWriteWithoutIdOverwritesSyntheticUnmanagedScript:true,
         writableConsentAndDisconnectRequired:true,
         grantsCreated:false,writeToolsInvoked:true,
         nativeHostUsed:false,authenticatedProfileUsed:false},
       promotionAuthorized:false, completeMcpHeadToHead:false,
       syntheticWritesOnly:true, privateSourceUsed:false,
       syntheticSourceDigests:{created:firstSha,updated:digest(second),stale:digest(overwritten)},
+      syntheticIdentityCollisionDigests:collisionSourceDigests,
     };
     console.log(JSON.stringify(evidence));
     await page.close();
