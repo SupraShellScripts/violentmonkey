@@ -26,7 +26,7 @@ const check = (value, label) => { if (!value) throw new Error('MCP public source
 const toolSpec = (name) => {
   const begin = tools.indexOf('  ' + name + ': defineTool({');
   check(begin >= 0, 'missing ' + name);
-  const end = tools.indexOf('  }),', begin);
+  const end = tools.indexOf('\n  }),', begin);
   check(end > begin, 'tool boundary for ' + name);
   return tools.slice(begin, end);
 };
