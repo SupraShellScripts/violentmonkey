@@ -69,6 +69,7 @@ case "$1" in
       --shm-size 1g --pids-limit 512 --memory 5g --cpus 3 \
       -e CI=1 -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
       -e UPSTREAM_EXTENSION_SHA="$UPSTREAM_EXTENSION_SHA" -e MCP_SOURCE_SHA="$MCP_SOURCE_SHA" \
+      -e FORK_SOURCE_SHA="$FORK_SOURCE_SHA" \
       -v "$PWD/upstream-extension:/upstream:ro" -v "$PWD/fork:/fork:ro" \
       -v "$PWD/upstream-mcp:/mcp:ro" \
       -w /upstream "$IMAGE" sh -ec '

@@ -137,6 +137,7 @@ jobs:
           test "$(git -C upstream-extension rev-parse HEAD)" = "$UPSTREAM_EXTENSION_SHA"
           test "$(git -C upstream-mcp rev-parse HEAD)" = "$MCP_SOURCE_SHA"
           test "$(git -C fork rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          export FORK_SOURCE_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
           sh fork/tools/ci/run-mcp-reuse-in-container.sh extension-browser
           cat upstream-extension/upstream-mcp-browser-smoke.json
       - name: Upload immutable synthetic public browser receipt

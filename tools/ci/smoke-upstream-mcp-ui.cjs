@@ -17,6 +17,8 @@ const expectedSha = process.env.UPSTREAM_EXTENSION_SHA || '';
 if (!/^[0-9a-f]{40}$/.test(expectedSha)) throw new Error('Missing immutable upstream extension SHA');
 const mcpSourceSha = process.env.MCP_SOURCE_SHA || '';
 if (!/^[0-9a-f]{40}$/.test(mcpSourceSha)) throw new Error('Missing immutable official MCP SHA');
+const harnessSourceSha = process.env.FORK_SOURCE_SHA || '';
+if (!/^[0-9a-f]{40}$/.test(harnessSourceSha)) throw new Error('Missing exact public bake-off harness SHA');
 const TOKEN = 'synthetic-bakeoff-local-only-not-a-credential';
 async function waitFor(check, maxMs=15000) {
   const end=Date.now()+maxMs;
@@ -269,8 +271,8 @@ async function main() {
     }
     await secondConsentTab.close();
     const evidence = {
-      schemaVersion:1, grade:'UPSTREAM_MCP_LIVE_SYNTHETIC_READONLY_BAKEOFF',
-      status:'PASS', upstreamExtensionSha:expectedSha, upstreamMcpSha:mcpSourceSha,
+      schemaVersion:1, grade:'UPSTREAM_MCP_LIVE_SYNTHETIC_AUTHORITY_AND_REVISION_BAKEOFF',
+      status:'PASS', harnessSourceSha, upstreamExtensionSha:expectedSha, upstreamMcpSha:mcpSourceSha,
       runtimeId:id, manifestVersion:manifest.manifest_version,
       extensionVersion:manifest.version, nodeVersion:process.version,
       profile:'ephemeral-test-data-only',
@@ -286,6 +288,7 @@ async function main() {
         nativeHostUsed:false,authenticatedProfileUsed:false},
       promotionAuthorized:false, completeMcpHeadToHead:false,
       syntheticWritesOnly:true, privateSourceUsed:false,
+      syntheticSourceDigests:{created:firstSha,updated:digest(second),stale:digest(overwritten)},
     };
     console.log(JSON.stringify(evidence));
     await page.close();
