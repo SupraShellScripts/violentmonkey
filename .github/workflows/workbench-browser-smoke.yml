@@ -20,6 +20,9 @@ on:
 permissions:
   contents: read
 
+env:
+  VMWB_QUALIFIED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 concurrency:
   group: workbench-browser-smoke-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -35,6 +38,11 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ env.VMWB_QUALIFIED_SOURCE_SHA }}
+
+      - name: Verify exact source HEAD before build
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$VMWB_QUALIFIED_SOURCE_SHA"
 
       - name: Build Chromium Workbench artifact in declared toolchain
         shell: bash
@@ -43,7 +51,7 @@ jobs:
       - name: Upload exact container-produced browser input
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1, Node.js 24
         with:
-          name: workbench-chromium-build-${{ github.sha }}
+          name: workbench-chromium-build-${{ env.VMWB_QUALIFIED_SOURCE_SHA }}
           path: artifacts/container/exec/
           if-no-files-found: error
           retention-days: 14
@@ -68,11 +76,19 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ env.VMWB_QUALIFIED_SOURCE_SHA }}
+
+      - name: Verify exact source HEAD before browser load
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -cne $env:VMWB_QUALIFIED_SOURCE_SHA) {
+            throw 'Browser smoke checkout is not the exact PR source commit.'
+          }
 
       - name: Download exact container-produced extension
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2, strict digest mismatch failure, Node.js 24
         with:
-          name: workbench-chromium-build-${{ github.sha }}
+          name: workbench-chromium-build-${{ env.VMWB_QUALIFIED_SOURCE_SHA }}
           path: browser-build
 
       - name: Verify transferred build evidence
@@ -80,8 +96,8 @@ jobs:
         run: |
           $result = Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'browser-build/run-result.json') | ConvertFrom-Json
           if ($result.status -cne 'success') { throw 'Containerized browser build did not report success.' }
-          if ($result.sourceCommit -cne $env:GITHUB_SHA) {
-            throw "Container build source mismatch: expected $($env:GITHUB_SHA), got $($result.sourceCommit)"
+          if ($result.sourceCommit -cne $env:VMWB_QUALIFIED_SOURCE_SHA) {
+            throw "Container build source mismatch: expected $($env:VMWB_QUALIFIED_SOURCE_SHA), got $($result.sourceCommit)"
           }
           $manifest = Join-Path $env:GITHUB_WORKSPACE 'browser-build/dist-mv3/manifest.json'
           if (-not (Test-Path -LiteralPath $manifest)) { throw 'Transferred Chromium manifest is missing.' }
@@ -116,7 +132,7 @@ jobs:
       - name: Upload immutable browser smoke evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1, Node.js 24
         with:
-          name: workbench-chromium-smoke-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          name: workbench-chromium-smoke-${{ runner.os }}-${{ runner.arch }}-${{ env.VMWB_QUALIFIED_SOURCE_SHA }}
           path: workbench-chromium-smoke-*.json
           if-no-files-found: error
           retention-days: 14

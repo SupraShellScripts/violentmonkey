@@ -39,7 +39,7 @@ Identity alone grants no Workbench mutation capability. Native transport remains
 
 ## Public CI browser-visible settings check
 
-The existing ephemeral Chromium smoke workflow now verifies the built extension's declared settings page, visible Developer Mode heading, three labeled actions, and read-only status indicators on Linux, Windows, and macOS. This check does **not** click Connect/Disconnect, invoke a native host, sign in to any service, or authorize mutation. Browser evidence distinguishes rendered UI from connected native-host or controlled-execution capability. This is a public-source browser smoke, not a production installation or comprehensive accessibility audit.
+The existing ephemeral Chromium smoke workflow now verifies the built extension's declared settings page, visible Developer Mode heading, three labeled actions, and read-only status indicators on Linux, Windows, and macOS. This check does **not** click Connect/Disconnect, invoke a native host, sign in to any service, or authorize mutation. Browser evidence distinguishes rendered UI from connected native-host or controlled-execution capability. PR workflow checkouts and result/artifact names use the exact PR head SHA rather than GitHub's synthesized pull-request merge SHA. Both the build and each OS-native browser load verify that source identity; the browser receipt binds to the same exact head. This is a public-source browser smoke, not a production installation or comprehensive accessibility audit.
 
 ## Vendor relationship
 

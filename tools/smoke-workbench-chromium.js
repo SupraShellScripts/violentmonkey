@@ -101,10 +101,17 @@ function assert(condition, message) {
       'Read-only Developer Mode status must expose transport and capability observations.');
     await optionsPage.close();
 
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      assert(/^[0-9a-f]{40}$/.test(process.env.VMWB_QUALIFIED_SOURCE_SHA || ''),
+        'GitHub Actions browser evidence requires an exact source commit.');
+    }
+
     const evidence = {
       schemaVersion: 1,
       status: 'PASS',
-      sourceCommit: process.env.GITHUB_SHA || null,
+      // GITHUB_SHA is a synthetic merge ref for pull_request events; bind
+      // evidence to the exact source actually checked out and built instead.
+      sourceCommit: process.env.VMWB_QUALIFIED_SOURCE_SHA || process.env.GITHUB_SHA || null,
       runnerOs: process.env.RUNNER_OS || process.platform,
       runnerArch: process.env.RUNNER_ARCH || process.arch,
       nodeVersion: process.version,
