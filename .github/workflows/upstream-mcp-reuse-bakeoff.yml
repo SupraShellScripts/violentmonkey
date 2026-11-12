@@ -102,3 +102,38 @@ jobs:
           path: upstream-mcp-test-receipt.json
           retention-days: 7
           if-no-files-found: error
+
+  upstream-extension-browser:
+    name: Upstream 2.50.0 MCP consent UI in disposable Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact public bake-off harness
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6, Node 24
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: fork
+          persist-credentials: false
+      - name: Checkout immutable stable upstream extension
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6, Node 24
+        with:
+          repository: violentmonkey/violentmonkey
+          ref: ${{ env.UPSTREAM_EXTENSION_SHA }}
+          path: upstream-extension
+          persist-credentials: false
+      - name: Build upstream MV3 and observe unapproved UI in disposable browser container
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-extension rev-parse HEAD)" = "$UPSTREAM_EXTENSION_SHA"
+          test "$(git -C fork rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          sh fork/tools/ci/run-mcp-reuse-in-container.sh extension-browser
+          cat upstream-extension/upstream-mcp-browser-smoke.json
+      - name: Upload immutable synthetic public browser receipt
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7, Node 24
+        with:
+          name: upstream-mcp-browser-${{ env.UPSTREAM_EXTENSION_SHA }}
+          path: upstream-extension/upstream-mcp-browser-smoke.json
+          retention-days: 7
+          if-no-files-found: error

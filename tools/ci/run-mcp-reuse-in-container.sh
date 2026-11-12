@@ -32,8 +32,29 @@ case "$1" in
         pnpm test
       '
     ;;
+  extension-browser)
+    # Build official 2.50.0 with its own declared pnpm version inside a
+    # pinned throwaway container, then run an isolated local Chromium profile.
+    # No real-user profile, secrets, host package installs or exposed ports.
+    : "$UPSTREAM_EXTENSION_SHA"
+    docker run --rm --network bridge --cap-drop ALL --security-opt no-new-privileges \
+      --shm-size 1g --pids-limit 512 --memory 5g --cpus 3 \
+      -e CI=1 -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
+      -e UPSTREAM_EXTENSION_SHA="$UPSTREAM_EXTENSION_SHA" \
+      -e PNPM_HOME=/tmp/pnpm-home -e PNPM_STORE_DIR=/tmp/pnpm-store \
+      -v "$PWD:/input:rw" -w /input/upstream-extension "$IMAGE" sh -ec '
+        npm install --prefix /tmp/pnpm-cli --no-audit --no-fund --ignore-scripts pnpm@12.13.0
+        export PATH="/tmp/pnpm-cli/node_modules/.bin:$PATH"
+        pnpm install --frozen-lockfile --ignore-scripts
+        pnpm build:mv3
+        test -f dist-mv3/manifest.json
+        npm install --prefix /tmp/pw --no-audit --no-fund --ignore-scripts playwright@1.62.1
+        node /tmp/pw/node_modules/playwright/cli.js install --with-deps chromium
+        node /input/fork/tools/ci/smoke-upstream-mcp-ui.cjs /input/upstream-extension/dist-mv3
+      '
+    ;;
   *)
-    echo "usage: run-mcp-reuse-in-container.sh census|test" >&2
+    echo "usage: run-mcp-reuse-in-container.sh census|test|extension-browser" >&2
     exit 64
     ;;
 esac
