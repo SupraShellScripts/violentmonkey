@@ -1,0 +1,115 @@
+name: Upstream Violentmonkey MCP reuse bakeoff (public only)
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/upstream-mcp-reuse-bakeoff.yml'
+      - 'tools/qualify-upstream-mcp-reuse.mjs'
+      - 'docs/UPSTREAM_MCP_REUSE_BAKEOFF.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-mcp-bakeoff-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  MCP_SOURCE_SHA: 8e85ac81eefedbdf2ccc916873d428aff0d6e121
+  UPSTREAM_EXTENSION_SHA: f3f4e7f50e92f84e83076046171e042ecce6c4ff
+
+jobs:
+  capability-contract:
+    name: Public source and authority census
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout exact fork source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6, Node 24
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: fork
+          persist-credentials: false
+      - name: Checkout official Violentmonkey 2.50.0 release
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: violentmonkey/violentmonkey
+          ref: ${{ env.UPSTREAM_EXTENSION_SHA }}
+          path: upstream-extension
+          persist-credentials: false
+      - name: Checkout official MCP at immutable source SHA
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: violentmonkey/mcp
+          ref: ${{ env.MCP_SOURCE_SHA }}
+          path: upstream-mcp
+          persist-credentials: false
+      - name: Install ephemeral Node 26
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6, Node 24
+        with:
+          node-version: '26'
+          package-manager-cache: false
+      - name: Verify exact checkouts and produce public capability receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-extension rev-parse HEAD)" = "$UPSTREAM_EXTENSION_SHA"
+          test "$(git -C upstream-mcp rev-parse HEAD)" = "$MCP_SOURCE_SHA"
+          test "$(git -C fork rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node fork/tools/qualify-upstream-mcp-reuse.mjs fork upstream-extension upstream-mcp > mcp-capability-census.json
+          cat mcp-capability-census.json
+      - name: Upload public-only capability receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: public-mcp-capability-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mcp-capability-census.json
+          retention-days: 7
+          if-no-files-found: error
+
+  official-mcp-tests:
+    name: Official MCP native build and tests (disposable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout official MCP at immutable source SHA
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: violentmonkey/mcp
+          ref: ${{ env.MCP_SOURCE_SHA }}
+          path: upstream-mcp
+          persist-credentials: false
+      - name: Install Node 26
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+          package-manager-cache: false
+      - name: Install pinned pnpm in disposable runner
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.10.1
+          run_install: false
+      - name: Native upstream MCP compile, schemas and E2E tests
+        working-directory: upstream-mcp
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$MCP_SOURCE_SHA"
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm typecheck
+          pnpm test
+      - name: Emit public-only test receipt
+        if: success()
+        shell: bash
+        run: |
+          printf '{"schemaVersion":1,"grade":"OFFICIAL_MCP_NATIVE_TESTS_NOT_BROWSER_AB","upstreamMcpSha":"%s","result":"PASS","privateSourceUsed":false,"authenticatedBrowserUsed":false,"releaseAuthorized":false}\n' "$MCP_SOURCE_SHA" > upstream-mcp-test-receipt.json
+          cat upstream-mcp-test-receipt.json
+      - name: Upload public-only native test receipt
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: public-mcp-tests-${{ env.MCP_SOURCE_SHA }}
+          path: upstream-mcp-test-receipt.json
+          retention-days: 7
+          if-no-files-found: error
