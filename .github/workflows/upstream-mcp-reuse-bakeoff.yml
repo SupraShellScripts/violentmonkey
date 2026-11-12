@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/upstream-mcp-reuse-bakeoff.yml'
       - 'tools/qualify-upstream-mcp-reuse.mjs'
+      - 'tools/ci/run-mcp-reuse-in-container.sh'
+      - 'tools/ci/smoke-upstream-mcp-ui.cjs'
       - 'docs/UPSTREAM_MCP_REUSE_BAKEOFF.md'
   workflow_dispatch:
 
