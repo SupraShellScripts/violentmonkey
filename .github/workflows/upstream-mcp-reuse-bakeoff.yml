@@ -45,11 +45,6 @@ jobs:
           ref: ${{ env.MCP_SOURCE_SHA }}
           path: upstream-mcp
           persist-credentials: false
-      - name: Install ephemeral Node 26
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6, Node 24
-        with:
-          node-version: '26'
-          package-manager-cache: false
       - name: Verify exact checkouts and produce public capability receipt
         shell: bash
         run: |
@@ -57,7 +52,8 @@ jobs:
           test "$(git -C upstream-extension rev-parse HEAD)" = "$UPSTREAM_EXTENSION_SHA"
           test "$(git -C upstream-mcp rev-parse HEAD)" = "$MCP_SOURCE_SHA"
           test "$(git -C fork rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          node fork/tools/qualify-upstream-mcp-reuse.mjs fork upstream-extension upstream-mcp > mcp-capability-census.json
+          export FORK_SOURCE_SHA='${{ github.event.pull_request.head.sha || github.sha }}'
+          sh fork/tools/ci/run-mcp-reuse-in-container.sh census > mcp-capability-census.json
           cat mcp-capability-census.json
       - name: Upload public-only capability receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -72,6 +68,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Checkout exact fork's public bakeoff harness
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: fork
+          persist-credentials: false
       - name: Checkout official MCP at immutable source SHA
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -79,26 +81,13 @@ jobs:
           ref: ${{ env.MCP_SOURCE_SHA }}
           path: upstream-mcp
           persist-credentials: false
-      - name: Install Node 26
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '26'
-          package-manager-cache: false
-      - name: Install pinned pnpm in disposable runner
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 12.10.1
-          run_install: false
-      - name: Native upstream MCP compile, schemas and E2E tests
-        working-directory: upstream-mcp
+      - name: Native upstream MCP build and E2E tests in pinned disposable container
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$MCP_SOURCE_SHA"
-          pnpm install --frozen-lockfile
-          pnpm build
-          pnpm typecheck
-          pnpm test
+          test "$(git -C upstream-mcp rev-parse HEAD)" = "$MCP_SOURCE_SHA"
+          test "$(git -C fork rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          sh fork/tools/ci/run-mcp-reuse-in-container.sh test
       - name: Emit public-only test receipt
         if: success()
         shell: bash

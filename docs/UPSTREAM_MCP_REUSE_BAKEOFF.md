@@ -23,10 +23,10 @@ Can official Violentmonkey MCP replace part or all of the customized Workbench D
 
 ## Public free-tier execution
 
-The isolated `upstream-mcp-reuse-bakeoff.yml` workflow executes two independent public jobs:
+The isolated `upstream-mcp-reuse-bakeoff.yml` workflow executes two independent public jobs within a **digest-pinned disposable Node 26 container**, without installing tools on the runner host:
 
 1. **Capability source census**: inspect the three *public* pinned trees, report MCP tools and explicit authority limits. No execution of site scripts or transfer of private data.
-2. **Upstream native tests**: run official MCP monorepo `pnpm build`, `pnpm typecheck`, and `pnpm test` on ephemeral public hosted GitHub Actions, using the pinned upstream source. These are upstream tests, not our Workbench HIL.
+2. **Upstream native tests**: run official MCP monorepo `pnpm build`, `pnpm typecheck`, and `pnpm test` inside a disposable container on ephemeral public hosted GitHub Actions. Container-only dependency retrieval uses network access without published ports or credentials. These are upstream tests, not our Workbench HIL.
 
 The downstream fork's existing native three-OS Chromium smoke remains separate, at public PR #31. Neither lane authenticates a real user profile or exercises source mutation.
 

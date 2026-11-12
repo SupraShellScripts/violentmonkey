@@ -2,7 +2,7 @@
 // Public source-only capability census, not a live agent or browser credential test.
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+
 
 const [forkArg, upstreamArg, mcpArg] = process.argv.slice(2);
 if (!forkArg || !upstreamArg || !mcpArg) throw new Error('Expected fork, upstream extension and MCP checkout directories.');
@@ -11,7 +11,12 @@ const upstream = resolve(upstreamArg);
 const mcp = resolve(mcpArg);
 const read = (root, file) => readFileSync(join(root, file), 'utf8');
 const json = (root, file) => JSON.parse(read(root, file));
-const head = (root) => execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+const head = (root) => {
+  const source = root === fork ? process.env.FORK_SOURCE_SHA
+    : root === upstream ? process.env.UPSTREAM_EXTENSION_SHA : process.env.MCP_SOURCE_SHA;
+  check(/^[0-9a-f]{40}$/.test(source || ''), 'exact public checkout identity missing');
+  return source;
+};
 
 const forkVersion = json(fork, 'package.json').version;
 const upstreamVersion = json(upstream, 'package.json').version;
