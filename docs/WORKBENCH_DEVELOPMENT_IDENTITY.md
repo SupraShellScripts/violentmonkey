@@ -37,6 +37,10 @@ Workbench native-host registration must authorize the exact identity reported by
 
 Identity alone grants no Workbench mutation capability. Native transport remains handshake-only until the controlled-runtime operation is separately implemented and qualified.
 
+## Public CI browser-visible settings check
+
+The existing ephemeral Chromium smoke workflow now verifies the built extension's declared settings page, visible Developer Mode heading, three labeled actions, and read-only status indicators on Linux, Windows, and macOS. This check does **not** click Connect/Disconnect, invoke a native host, sign in to any service, or authorize mutation. Browser evidence distinguishes rendered UI from connected native-host or controlled-execution capability. This is a public-source browser smoke, not a production installation or comprehensive accessibility audit.
+
 ## Vendor relationship
 
 A vendor-issued store ID is not required for this unpacked development identity:

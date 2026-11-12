@@ -68,6 +68,39 @@ function assert(condition, message) {
       'Browser-visible manifest lost nativeMessaging permission.',
     );
 
+
+    // Exercise the built extension's human-facing settings surface in the
+    // disposable browser profile. Never click Connect or invoke a native host.
+    const optionsEntry = observed.manifest.options_ui?.page;
+    assert(
+      /^options\/index\.html(?:#settings)?$/.test(optionsEntry || ''),
+      'Expected the declared built extension settings page.',
+    );
+    const optionsPage = await context.newPage();
+    await optionsPage.goto(`chrome-extension://${extensionId}/${optionsEntry}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
+    });
+    const developerSection = optionsPage.locator('section.developer-mode');
+    await developerSection.waitFor({ state: 'visible', timeout: 15000 });
+    const heading = (await developerSection.locator('h3').textContent() || '').trim();
+    assert(heading.length > 0, 'Developer Mode heading must have a readable label.');
+    const actionButtons = developerSection.locator('.actions button');
+    const actionCount = await actionButtons.count();
+    assert(actionCount === 3, 'Developer Mode must show three human-facing actions.');
+    for (let i = 0; i < actionCount; i += 1) {
+      const button = actionButtons.nth(i);
+      assert(await button.isVisible(), 'Developer Mode action must be visible.');
+      assert((await button.textContent() || '').trim().length > 0,
+        'Developer Mode action must have a nonempty label.');
+    }
+    const statusRegion = developerSection.locator('.status');
+    await statusRegion.waitFor({ state: 'visible', timeout: 15000 });
+    const statusCodes = await statusRegion.locator('code').allTextContents();
+    assert(statusCodes.length >= 2,
+      'Read-only Developer Mode status must expose transport and capability observations.');
+    await optionsPage.close();
+
     const evidence = {
       schemaVersion: 1,
       status: 'PASS',
@@ -90,7 +123,11 @@ function assert(condition, message) {
         chromiumExtensionLoads: true,
         pinnedDevelopmentIdentityObserved: true,
         nativeMessagingManifestPermissionObserved: true,
+        developerModeSettingsVisible: true,
+        developerModeActionsLabeled: true,
+        developerModeReadOnlyStatusVisible: true,
         nativeHostConnected: false,
+        developerModeActionInvoked: false,
         controllerIngressExercised: false,
         reconcileExercised: false,
         browserExecutionAuthority: false,
