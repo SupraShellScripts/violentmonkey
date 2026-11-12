@@ -94,6 +94,18 @@ function assert(condition, message) {
       assert((await button.textContent() || '').trim().length > 0,
         'Developer Mode action must have a nonempty label.');
     }
+
+    // Human/assistive-technology smoke: verify the three developer actions
+    // remain reachable with keyboard Tab without invoking any action.
+    await actionButtons.first().focus();
+    assert(await actionButtons.first().evaluate(el => document.activeElement === el),
+      'First developer action must accept keyboard focus.');
+    for (let i = 1; i < actionCount; i += 1) {
+      await optionsPage.keyboard.press('Tab');
+      assert(await actionButtons.nth(i).evaluate(el => document.activeElement === el),
+        'Developer actions must follow keyboard tab order without intervening traps.');
+    }
+
     const statusRegion = developerSection.locator('.status');
     await statusRegion.waitFor({ state: 'visible', timeout: 15000 });
     const statusCodes = await statusRegion.locator('code').allTextContents();
@@ -132,6 +144,7 @@ function assert(condition, message) {
         nativeMessagingManifestPermissionObserved: true,
         developerModeSettingsVisible: true,
         developerModeActionsLabeled: true,
+        developerModeKeyboardTabOrderObserved: true,
         developerModeReadOnlyStatusVisible: true,
         nativeHostConnected: false,
         developerModeActionInvoked: false,
